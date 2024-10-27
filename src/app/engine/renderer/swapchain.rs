@@ -64,6 +64,8 @@ impl Swapchain {
             return Ok(());
         }
 
+        self.is_dirty = false;
+
         unsafe {
             let new_swapchain = self.context.swapchain_extension.create_swapchain(
                 &vk::SwapchainCreateInfoKHR::default()

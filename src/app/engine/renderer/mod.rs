@@ -65,7 +65,7 @@ impl Renderer {
                 None,
             )?;
 
-            let in_flight_frames_count = 1; // todo: fix flicking when > 1
+            let in_flight_frames_count = 2;
 
             let command_buffers = context.device.allocate_command_buffers(
                 &vk::CommandBufferAllocateInfo::default()
@@ -110,7 +110,8 @@ impl Renderer {
     }
 
     pub fn resize(&mut self) -> Result<()> {
-        self.swapchain.resize()
+        self.swapchain.is_dirty = true;
+        Ok(())
     }
 
     pub fn render(&mut self) -> Result<()> {
@@ -169,17 +170,9 @@ impl Renderer {
                 vk::ImageAspectFlags::COLOR,
             );
 
-            self.context.transition_image_layout(
-                frame.command_buffer,
-                self.swapchain.images[image_index as usize],
-                renderable_image_state,
-                present_image_state,
-                vk::ImageAspectFlags::COLOR,
-            );
-
             self.context.begin_rendering(
                 frame.command_buffer,
-                self.swapchain.views[self.frame_index],
+                self.swapchain.views[image_index as usize],
                 vk::ClearColorValue {
                     float32: [0.01, 0.01, 0.01, 1.0],
                 },
@@ -211,6 +204,14 @@ impl Renderer {
                 .cmd_draw(frame.command_buffer, 3, 1, 0, 0);
 
             self.context.device.cmd_end_rendering(frame.command_buffer);
+
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.swapchain.images[image_index as usize],
+                renderable_image_state,
+                present_image_state,
+                vk::ImageAspectFlags::COLOR,
+            );
 
             self.context
                 .device
