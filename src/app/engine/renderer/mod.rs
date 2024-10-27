@@ -122,24 +122,23 @@ impl Renderer {
                 .device
                 .wait_for_fences(&[frame.in_flight_fence], true, u64::MAX)?;
 
-            self.context.device.reset_fences(&[frame.in_flight_fence])?;
-
-            self.context
-                .device
-                .reset_command_buffer(frame.command_buffer, vk::CommandBufferResetFlags::empty())?;
-
             if self.swapchain.is_dirty {
                 self.swapchain.resize()?;
+            }
+
+            if self.swapchain.extent.width == 0 || self.swapchain.extent.height == 0 {
+                return Ok(());
             }
 
             let image_index = self
                 .swapchain
                 .acquire_next_image(frame.image_available_semaphore)?;
 
-            self.context.device.begin_command_buffer(
-                frame.command_buffer,
-                &vk::CommandBufferBeginInfo::default(),
-            )?;
+            self.context.device.reset_fences(&[frame.in_flight_fence])?;
+
+            self.context
+                .device
+                .reset_command_buffer(frame.command_buffer, vk::CommandBufferResetFlags::empty())?;
 
             let undefined_image_state = ImageLayoutState {
                 layout: vk::ImageLayout::UNDEFINED,
@@ -161,6 +160,12 @@ impl Renderer {
                 stage_mask: vk::PipelineStageFlags::BOTTOM_OF_PIPE,
                 queue_family_index: vk::QUEUE_FAMILY_IGNORED,
             };
+
+            self.context.device.begin_command_buffer(
+                frame.command_buffer,
+                &vk::CommandBufferBeginInfo::default()
+                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+            )?;
 
             self.context.transition_image_layout(
                 frame.command_buffer,
