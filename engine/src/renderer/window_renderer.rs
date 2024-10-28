@@ -1,6 +1,6 @@
-use crate::app::engine::renderer::swapchain::Swapchain;
-use crate::app::engine::renderer::Renderer;
-use crate::app::engine::rendering_context::{ImageLayoutState, RenderingContext};
+use crate::renderer::swapchain::Swapchain;
+use crate::renderer::Renderer;
+use crate::rendering_context::{ImageLayoutState, RenderingContext};
 use ash::vk;
 use ash::vk::{CommandBuffer, Extent3D};
 use std::sync::Arc;

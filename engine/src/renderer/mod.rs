@@ -1,9 +1,7 @@
 mod swapchain;
 pub mod window_renderer;
 
-use crate::app::engine::rendering_context::{
-    Image, ImageAttributes, ImageLayoutState, RenderingContext,
-};
+use crate::rendering_context::{Image, ImageAttributes, ImageLayoutState, RenderingContext};
 use anyhow::Result;
 use ash::vk;
 use ash::vk::{CommandBuffer, Extent3D};

@@ -1,6 +1,5 @@
-mod engine;
-
-use crate::app::engine::Engine;
+use engine::winit;
+use ::engine::Engine;
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -36,7 +35,6 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-        // request redraw
         if let Some(engine) = self.engine.as_mut() {
             engine.request_redraw();
         }

@@ -58,7 +58,7 @@ pub struct QueueFamilies {
 }
 
 pub mod queue_family_picker {
-    use crate::app::engine::rendering_context::{PhysicalDevice, QueueFamilies};
+    use crate::rendering_context::{PhysicalDevice, QueueFamilies};
     use anyhow::Context as AnyhowContext;
     use anyhow::Result;
     use ash::vk;

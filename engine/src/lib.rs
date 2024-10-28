@@ -1,9 +1,7 @@
 mod renderer;
 mod rendering_context;
 
-use crate::app::engine::rendering_context::{
-    queue_family_picker, RenderingContext, RenderingContextAttributes,
-};
+use crate::rendering_context::{queue_family_picker, RenderingContext, RenderingContextAttributes};
 use anyhow::Result;
 use ash::vk;
 use renderer::window_renderer::WindowRenderer;
@@ -12,6 +10,9 @@ use std::sync::Arc;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
+
+pub use anyhow;
+pub use winit;
 
 pub struct Engine {
     windows: HashMap<WindowId, Arc<Window>>,

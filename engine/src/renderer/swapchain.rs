@@ -1,4 +1,4 @@
-use crate::app::engine::rendering_context::{RenderingContext, Surface};
+use crate::rendering_context::{RenderingContext, Surface};
 use anyhow::Result;
 use ash::vk;
 use ash::vk::AcquireNextImageInfoKHR;
