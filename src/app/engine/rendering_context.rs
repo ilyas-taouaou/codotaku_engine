@@ -7,6 +7,10 @@
 use anyhow::Result;
 use ash::vk;
 use ash::vk::{DeviceQueueInfo2, SurfaceCapabilitiesKHR};
+use gpu_allocator::vulkan::{
+    Allocation, AllocationCreateDesc, AllocationScheme, Allocator, AllocatorCreateDesc,
+};
+use gpu_allocator::{AllocationSizes, AllocatorDebugSettings, MemoryLocation};
 use std::collections::HashSet;
 use std::io;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -405,6 +409,51 @@ impl RenderingContext {
         }
     }
 
+    pub fn blit_image(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        src_image: vk::Image,
+        dst_image: vk::Image,
+        src_extent: vk::Extent3D,
+        dst_extent: vk::Extent3D,
+    ) {
+        let subresource = vk::ImageSubresourceLayers::default()
+            .aspect_mask(vk::ImageAspectFlags::COLOR)
+            .mip_level(0)
+            .base_array_layer(0)
+            .layer_count(1);
+
+        unsafe {
+            self.device.cmd_blit_image(
+                command_buffer,
+                src_image,
+                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                dst_image,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &[vk::ImageBlit::default()
+                    .src_subresource(subresource)
+                    .src_offsets([
+                        vk::Offset3D::default(),
+                        vk::Offset3D {
+                            x: src_extent.width as i32,
+                            y: src_extent.height as i32,
+                            z: src_extent.depth as i32,
+                        },
+                    ])
+                    .dst_subresource(subresource)
+                    .dst_offsets([
+                        vk::Offset3D::default(),
+                        vk::Offset3D {
+                            x: dst_extent.width as i32,
+                            y: dst_extent.height as i32,
+                            z: 1,
+                        },
+                    ])],
+                vk::Filter::NEAREST,
+            );
+        }
+    }
+
     pub fn begin_rendering(
         &self,
         command_buffer: vk::CommandBuffer,
@@ -427,6 +476,127 @@ impl RenderingContext {
             );
         }
     }
+
+    pub fn create_allocator(
+        &self,
+        debug_settings: AllocatorDebugSettings,
+        allocation_sizes: AllocationSizes,
+    ) -> Result<Allocator> {
+        Ok(Allocator::new(&AllocatorCreateDesc {
+            instance: self.instance.clone(),
+            device: self.device.clone(),
+            physical_device: self.physical_device.handle,
+            debug_settings,
+            buffer_device_address: true,
+            allocation_sizes,
+        })?)
+    }
+
+    pub fn create_image(
+        &self,
+        allocator: &mut Allocator,
+        name: &str,
+        attributes: ImageAttributes,
+    ) -> Result<Image> {
+        let image = unsafe {
+            self.device.create_image(
+                &vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .format(attributes.format)
+                    .extent(attributes.extent)
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .usage(attributes.usage)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                    .initial_layout(vk::ImageLayout::UNDEFINED),
+                None,
+            )
+        }?;
+
+        let requirements = unsafe { self.device.get_image_memory_requirements(image) };
+
+        let allocation = allocator.allocate(&AllocationCreateDesc {
+            name,
+            requirements,
+            location: attributes.location,
+            linear: attributes.linear,
+            allocation_scheme: attributes.allocation_scheme,
+        })?;
+
+        unsafe {
+            self.device
+                .bind_image_memory(image, allocation.memory(), allocation.offset())
+        }?;
+
+        let view = self.create_image_view(image, attributes.format, vk::ImageAspectFlags::COLOR)?;
+
+        Ok(Image {
+            handle: image,
+            allocation: Some(allocation),
+            view,
+            layout: ImageLayoutState {
+                access_mask: vk::AccessFlags2::empty(),
+                layout: vk::ImageLayout::UNDEFINED,
+                stage_mask: vk::PipelineStageFlags2::empty(),
+                queue_family_index: 0,
+            },
+            attributes,
+        })
+    }
+
+    pub fn destroy_image(&self, allocator: &mut Allocator, image: &mut Image) -> Result<()> {
+        unsafe {
+            self.device.destroy_image_view(image.view, None);
+            if let Some(allocation) = image.allocation.take() {
+                allocator.free(allocation)?;
+            }
+            self.device.destroy_image(image.handle, None);
+        }
+        Ok(())
+    }
+
+    pub fn clear_image(
+        &self,
+        command_buffer: vk::CommandBuffer,
+        image: Image,
+        clear_color: [f32; 4],
+    ) {
+        unsafe {
+            self.device.cmd_clear_color_image(
+                command_buffer,
+                image.handle,
+                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                &vk::ClearColorValue {
+                    float32: clear_color,
+                },
+                &[vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)],
+            )
+        }
+    }
+}
+
+pub struct ImageAttributes {
+    pub location: MemoryLocation,
+    pub allocation_scheme: AllocationScheme,
+    pub linear: bool,
+    pub extent: vk::Extent3D,
+    pub format: vk::Format,
+    pub usage: vk::ImageUsageFlags,
+}
+
+pub struct Image {
+    pub handle: vk::Image,
+    pub allocation: Option<Allocation>,
+    pub view: vk::ImageView,
+    pub layout: ImageLayoutState,
+    pub attributes: ImageAttributes,
 }
 
 #[derive(Clone, Copy)]

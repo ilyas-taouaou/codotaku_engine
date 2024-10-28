@@ -1,10 +1,14 @@
 mod swapchain;
 
 use crate::app::engine::renderer::swapchain::Swapchain;
-use crate::app::engine::rendering_context::{ImageLayoutState, RenderingContext};
+use crate::app::engine::rendering_context::{
+    Image, ImageAttributes, ImageLayoutState, RenderingContext,
+};
 use anyhow::Result;
 use ash::vk;
-use ash::vk::CommandBuffer;
+use ash::vk::{CommandBuffer, Extent3D};
+use gpu_allocator::vulkan::{AllocationScheme, Allocator};
+use gpu_allocator::MemoryLocation;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -16,6 +20,7 @@ struct Frame {
 }
 
 pub struct Renderer {
+    allocator: Allocator,
     in_flight_frames_count: usize,
     frame_index: usize,
     frames: Vec<Frame>,
@@ -24,6 +29,7 @@ pub struct Renderer {
     pipeline_layout: vk::PipelineLayout,
     swapchain: Swapchain,
     context: Arc<RenderingContext>,
+    render_target: Image,
 }
 
 const SHADERS_DIR: &str = "res/shaders/";
@@ -41,6 +47,26 @@ impl Renderer {
         let vertex_shader = load_shader_module(context.as_ref(), "vert.spv")?;
         let fragment_shader = load_shader_module(context.as_ref(), "frag.spv")?;
 
+        let mut allocator = context.create_allocator(Default::default(), Default::default())?;
+
+        let render_target = context.create_image(
+            &mut allocator,
+            "render target",
+            ImageAttributes {
+                extent: Extent3D::default()
+                    .width(swapchain.extent.width)
+                    .height(swapchain.extent.height)
+                    .depth(1),
+                format: vk::Format::R16G16B16A16_SFLOAT,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
+                    | vk::ImageUsageFlags::TRANSFER_SRC
+                    | vk::ImageUsageFlags::TRANSFER_DST,
+                location: MemoryLocation::GpuOnly,
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+            },
+        )?;
+
         unsafe {
             let pipeline_layout = context
                 .device
@@ -49,8 +75,11 @@ impl Renderer {
             let pipeline = context.create_graphics_pipeline(
                 vertex_shader,
                 fragment_shader,
-                swapchain.extent,
-                swapchain.format,
+                vk::Extent2D {
+                    width: render_target.attributes.extent.width,
+                    height: render_target.attributes.extent.height,
+                },
+                render_target.attributes.format,
                 pipeline_layout,
                 Default::default(),
             )?;
@@ -97,6 +126,7 @@ impl Renderer {
             }
 
             Ok(Self {
+                allocator,
                 in_flight_frames_count,
                 frame_index: 0,
                 frames,
@@ -105,6 +135,7 @@ impl Renderer {
                 pipeline_layout,
                 swapchain,
                 context,
+                render_target,
             })
         }
     }
@@ -169,14 +200,14 @@ impl Renderer {
 
             self.context.transition_image_layout(
                 frame.command_buffer,
-                self.swapchain.images[image_index as usize],
+                self.render_target.handle,
                 undefined_image_state,
                 renderable_image_state,
             );
 
             self.context.begin_rendering(
                 frame.command_buffer,
-                self.swapchain.views[image_index as usize],
+                self.render_target.view,
                 vk::ClearColorValue {
                     float32: [0.01, 0.01, 0.01, 1.0],
                 },
@@ -185,10 +216,53 @@ impl Renderer {
             self.draw(frame.command_buffer);
             self.context.device.cmd_end_rendering(frame.command_buffer);
 
+            // Transition the swapchain image to transfer destination layout
             self.context.transition_image_layout(
                 frame.command_buffer,
                 self.swapchain.images[image_index as usize],
+                undefined_image_state,
+                ImageLayoutState {
+                    layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+                    stage_mask: vk::PipelineStageFlags2::TRANSFER,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
+            );
+
+            // Transition the render target image to transfer source layout
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.render_target.handle,
                 renderable_image_state,
+                ImageLayoutState {
+                    layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+                    access_mask: vk::AccessFlags2::TRANSFER_READ,
+                    stage_mask: vk::PipelineStageFlags2::TRANSFER,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
+            );
+
+            // Copy the render target image to the swapchain image
+            self.context.blit_image(
+                frame.command_buffer,
+                self.render_target.handle,
+                self.swapchain.images[image_index as usize],
+                self.render_target.attributes.extent,
+                Extent3D::default()
+                    .width(self.swapchain.extent.width)
+                    .height(self.swapchain.extent.height),
+            );
+
+            // Transition the swapchain image to present layout
+            self.context.transition_image_layout(
+                frame.command_buffer,
+                self.swapchain.images[image_index as usize],
+                ImageLayoutState {
+                    layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+                    access_mask: vk::AccessFlags2::TRANSFER_WRITE,
+                    stage_mask: vk::PipelineStageFlags2::TRANSFER,
+                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
+                },
                 present_image_state,
             );
 
@@ -250,6 +324,10 @@ impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
+
+            self.context
+                .destroy_image(&mut self.allocator, &mut self.render_target)
+                .unwrap();
 
             self.frames.drain(..).for_each(|frame| {
                 self.context
