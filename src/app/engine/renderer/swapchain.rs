@@ -1,6 +1,7 @@
 use crate::app::engine::rendering_context::{RenderingContext, Surface};
 use anyhow::Result;
 use ash::vk;
+use ash::vk::AcquireNextImageInfoKHR;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -111,11 +112,13 @@ impl Swapchain {
 
     pub fn acquire_next_image(&mut self, image_available_semaphore: vk::Semaphore) -> Result<u32> {
         let (image_index, is_suboptimal) = unsafe {
-            self.context.swapchain_extension.acquire_next_image(
-                self.handle,
-                u64::MAX,
-                image_available_semaphore,
-                vk::Fence::null(),
+            self.context.swapchain_extension.acquire_next_image2(
+                &AcquireNextImageInfoKHR::default()
+                    .swapchain(self.handle)
+                    .timeout(u64::MAX)
+                    .semaphore(image_available_semaphore)
+                    .fence(vk::Fence::null())
+                    .device_mask(1),
             )?
         };
         if is_suboptimal {

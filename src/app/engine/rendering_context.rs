@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 use ash::vk;
-use ash::vk::SurfaceCapabilitiesKHR;
+use ash::vk::{DeviceQueueInfo2, SurfaceCapabilitiesKHR};
 use std::collections::HashSet;
 use std::io;
 use winit::raw_window_handle::{HasDisplayHandle, HasWindowHandle};
@@ -182,12 +182,14 @@ impl RenderingContext {
                     .queue_create_infos(&queue_create_infos)
                     .enabled_extension_names(&[ash::khr::swapchain::NAME.as_ptr()])
                     .push_next(
-                        &mut vk::PhysicalDeviceDynamicRenderingFeatures::default()
-                            .dynamic_rendering(true),
+                        &mut vk::PhysicalDeviceVulkan12Features::default()
+                            .buffer_device_address(true)
+                            .descriptor_indexing(true),
                     )
                     .push_next(
-                        &mut vk::PhysicalDeviceBufferDeviceAddressFeatures::default()
-                            .buffer_device_address(true),
+                        &mut vk::PhysicalDeviceVulkan13Features::default()
+                            .dynamic_rendering(true)
+                            .synchronization2(true),
                     ),
                 None,
             )?;
@@ -196,7 +198,10 @@ impl RenderingContext {
 
             let queues = queue_family_indices
                 .iter()
-                .map(|index| device.get_device_queue(*index, 0))
+                .map(|index| {
+                    device
+                        .get_device_queue2(&DeviceQueueInfo2::default().queue_family_index(*index))
+                })
                 .collect::<Vec<_>>();
 
             Ok(Self {
@@ -365,32 +370,37 @@ impl RenderingContext {
         image: vk::Image,
         old_state: ImageLayoutState,
         new_state: ImageLayoutState,
-        aspect_mask: vk::ImageAspectFlags,
     ) {
         unsafe {
-            self.device.cmd_pipeline_barrier(
+            let aspect_mask =
+                if new_state.layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
+                    vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
+                } else {
+                    vk::ImageAspectFlags::COLOR
+                };
+
+            self.device.cmd_pipeline_barrier2(
                 command_buffer,
-                old_state.stage_mask,
-                new_state.stage_mask,
-                vk::DependencyFlags::empty(),
-                &[],
-                &[],
-                &[vk::ImageMemoryBarrier::default()
-                    .src_access_mask(old_state.access_mask)
-                    .dst_access_mask(new_state.access_mask)
-                    .old_layout(old_state.layout)
-                    .new_layout(new_state.layout)
-                    .src_queue_family_index(old_state.queue_family_index)
-                    .dst_queue_family_index(new_state.queue_family_index)
-                    .image(image)
-                    .subresource_range(
-                        vk::ImageSubresourceRange::default()
-                            .aspect_mask(aspect_mask)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    )],
+                &vk::DependencyInfo::default().image_memory_barriers(&[
+                    vk::ImageMemoryBarrier2KHR::default()
+                        .src_stage_mask(old_state.stage_mask)
+                        .dst_stage_mask(new_state.stage_mask)
+                        .src_access_mask(old_state.access_mask)
+                        .dst_access_mask(new_state.access_mask)
+                        .old_layout(old_state.layout)
+                        .new_layout(new_state.layout)
+                        .src_queue_family_index(old_state.queue_family_index)
+                        .dst_queue_family_index(new_state.queue_family_index)
+                        .image(image)
+                        .subresource_range(
+                            vk::ImageSubresourceRange::default()
+                                .aspect_mask(aspect_mask)
+                                .base_mip_level(0)
+                                .level_count(1)
+                                .base_array_layer(0)
+                                .layer_count(1),
+                        ),
+                ]),
             );
         }
     }
@@ -421,9 +431,9 @@ impl RenderingContext {
 
 #[derive(Clone, Copy)]
 pub struct ImageLayoutState {
-    pub access_mask: vk::AccessFlags,
+    pub access_mask: vk::AccessFlags2,
     pub layout: vk::ImageLayout,
-    pub stage_mask: vk::PipelineStageFlags,
+    pub stage_mask: vk::PipelineStageFlags2,
     pub queue_family_index: u32,
 }
 
