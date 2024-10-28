@@ -1,11 +1,12 @@
 mod renderer;
 mod rendering_context;
 
-use crate::app::engine::renderer::Renderer;
 use crate::app::engine::rendering_context::{
     queue_family_picker, RenderingContext, RenderingContextAttributes,
 };
 use anyhow::Result;
+use ash::vk;
+use renderer::window_renderer::WindowRenderer;
 use std::collections::HashMap;
 use std::sync::Arc;
 use winit::event::WindowEvent;
@@ -14,7 +15,7 @@ use winit::window::{Window, WindowAttributes, WindowId};
 
 pub struct Engine {
     windows: HashMap<WindowId, Arc<Window>>,
-    renderers: HashMap<WindowId, Renderer>,
+    renderers: HashMap<WindowId, WindowRenderer>,
     primary_window_id: WindowId,
     rendering_context: Arc<RenderingContext>,
 }
@@ -34,7 +35,16 @@ impl Engine {
         let renderers = windows
             .iter()
             .map(|(id, window)| {
-                let renderer = Renderer::new(rendering_context.clone(), window.clone()).unwrap();
+                let renderer = WindowRenderer::new(
+                    rendering_context.clone(),
+                    window.clone(),
+                    2,
+                    vk::Format::R16G16B16A16_SFLOAT,
+                    vk::ClearColorValue {
+                        float32: [0.0, 0.0, 0.0, 1.0],
+                    },
+                )
+                .unwrap();
                 (*id, renderer)
             })
             .collect::<HashMap<_, _>>();
@@ -64,12 +74,12 @@ impl Engine {
             }
             WindowEvent::Resized(_) => {
                 if let Some(renderer) = self.renderers.get_mut(&window_id) {
-                    renderer.resize().unwrap();
+                    renderer.resize();
                 }
             }
             WindowEvent::ScaleFactorChanged { .. } => {
                 if let Some(renderer) = self.renderers.get_mut(&window_id) {
-                    renderer.resize().unwrap();
+                    renderer.resize();
                 }
             }
             WindowEvent::RedrawRequested => {
@@ -90,7 +100,15 @@ impl Engine {
         let window_id = window.id();
         self.windows.insert(window_id, window.clone());
 
-        let renderer = Renderer::new(self.rendering_context.clone(), window)?;
+        let renderer = WindowRenderer::new(
+            self.rendering_context.clone(),
+            window.clone(),
+            2,
+            vk::Format::R16G16B16A16_SFLOAT,
+            vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+        )?;
         self.renderers.insert(window_id, renderer);
 
         Ok(window_id)
