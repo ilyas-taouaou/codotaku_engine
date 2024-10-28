@@ -124,9 +124,16 @@ impl WindowRenderer {
                 return Ok(());
             }
 
-            let image_index = self
+            let image_index = match self
                 .swapchain
-                .acquire_next_image(frame.image_available_semaphore)?;
+                .acquire_next_image(frame.image_available_semaphore)
+            {
+                Ok(image_index) => image_index,
+                Err(_) => {
+                    self.swapchain.is_dirty = true;
+                    return Ok(());
+                }
+            };
 
             self.context.device.reset_fences(&[frame.in_flight_fence])?;
 
