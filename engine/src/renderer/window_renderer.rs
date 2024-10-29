@@ -2,10 +2,11 @@ use crate::renderer::swapchain::Swapchain;
 use crate::renderer::Renderer;
 use crate::rendering_context::{ImageLayoutState, RenderingContext};
 use ash::vk;
-use ash::vk::{CommandBuffer, Extent3D};
+use ash::vk::CommandBuffer;
 use std::sync::Arc;
 use winit::window::Window;
 
+use crate::renderer::commands::Commands;
 use anyhow::Result;
 
 struct Frame {
@@ -113,14 +114,17 @@ impl WindowRenderer {
             if self.swapchain.is_dirty {
                 self.context.device.device_wait_idle()?;
                 self.swapchain.resize()?;
-                if self.swapchain.extent.width == 0 || self.swapchain.extent.height == 0 {
+                let swapchain_extent = self.swapchain.extent;
+                if swapchain_extent.width == 0 || swapchain_extent.height == 0 {
                     return Ok(());
                 }
                 self.renderer
-                    .resize((self.swapchain.extent.width, self.swapchain.extent.height))?;
+                    .resize((swapchain_extent.width, swapchain_extent.height))?;
             }
 
-            if self.swapchain.extent.width == 0 || self.swapchain.extent.height == 0 {
+            let swapchain_extent = self.swapchain.extent;
+
+            if swapchain_extent.width == 0 || swapchain_extent.height == 0 {
                 return Ok(());
             }
 
@@ -135,105 +139,39 @@ impl WindowRenderer {
                 }
             };
 
+            let graphics_queue = self.context.queues[self.context.queue_families.graphics as usize];
+
             self.context.device.reset_fences(&[frame.in_flight_fence])?;
 
-            self.context
-                .device
-                .reset_command_buffer(frame.command_buffer, vk::CommandBufferResetFlags::empty())?;
+            let command_buffer = frame.command_buffer;
 
-            let undefined_image_state = ImageLayoutState {
-                layout: vk::ImageLayout::UNDEFINED,
-                access_mask: vk::AccessFlags2::NONE,
-                stage_mask: vk::PipelineStageFlags2::NONE,
-                queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            };
-
-            let present_image_state = ImageLayoutState {
-                layout: vk::ImageLayout::PRESENT_SRC_KHR,
-                access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
-                stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-                queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-            };
-
-            self.context.device.begin_command_buffer(
-                frame.command_buffer,
-                &vk::CommandBufferBeginInfo::default()
-                    .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT),
-            )?;
-
-            self.renderer
-                .render(frame.command_buffer, self.clear_color, self.frame_index)?;
-
-            // Transition the swapchain image to transfer destination layout
-            self.context.transition_image_layout(
-                frame.command_buffer,
-                self.swapchain.images[image_index as usize],
-                undefined_image_state,
-                ImageLayoutState {
-                    layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    access_mask: vk::AccessFlags2::TRANSFER_WRITE,
-                    stage_mask: vk::PipelineStageFlags2::TRANSFER,
-                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                },
-            );
-
-            let render_target = &self.renderer.render_targets[self.frame_index];
-
-            // Transition the render target image to transfer source layout
-            self.context.transition_image_layout(
-                frame.command_buffer,
-                render_target.handle,
-                render_target.layout,
-                ImageLayoutState {
-                    layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                    access_mask: vk::AccessFlags2::TRANSFER_READ,
-                    stage_mask: vk::PipelineStageFlags2::TRANSFER,
-                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                },
-            );
-
-            // Copy the render target image to the swapchain image
-            self.context.blit_image(
-                frame.command_buffer,
-                render_target.handle,
-                self.swapchain.images[image_index as usize],
-                render_target.attributes.extent,
-                Extent3D::default()
-                    .width(self.swapchain.extent.width)
-                    .height(self.swapchain.extent.height),
-            );
-
-            // Transition the swapchain image to present layout
-            self.context.transition_image_layout(
-                frame.command_buffer,
-                self.swapchain.images[image_index as usize],
-                ImageLayoutState {
-                    layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                    access_mask: vk::AccessFlags2::TRANSFER_WRITE,
-                    stage_mask: vk::PipelineStageFlags2::TRANSFER,
-                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                },
-                present_image_state,
-            );
-
-            self.context
-                .device
-                .end_command_buffer(frame.command_buffer)?;
-
-            self.context.device.queue_submit2(
-                self.context.queues[self.context.queue_families.graphics as usize],
-                &[vk::SubmitInfo2KHR::default()
-                    .command_buffer_infos(&[vk::CommandBufferSubmitInfoKHR::default()
-                        .command_buffer(frame.command_buffer)
-                        .device_mask(1)])
-                    .wait_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
-                        .semaphore(frame.image_available_semaphore)
-                        .stage_mask(vk::PipelineStageFlags2KHR::COLOR_ATTACHMENT_OUTPUT)])
-                    .signal_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
-                        .semaphore(frame.render_finished_semaphore)
-                        .stage_mask(vk::PipelineStageFlags2KHR::COLOR_ATTACHMENT_OUTPUT)])],
-                frame.in_flight_fence,
-            )?;
+            let swapchain_image = &mut self.swapchain.images[image_index as usize];
+            let commands = Commands::new(self.context.clone(), command_buffer)?;
+            let render_target =
+                self.renderer
+                    .render(&commands, self.clear_color, self.frame_index)?;
+            commands
+                .transition_image_layout(swapchain_image, ImageLayoutState::transfer_destination())
+                .transition_image_layout(render_target, ImageLayoutState::transfer_source())
+                .blit_image(
+                    render_target,
+                    swapchain_image,
+                    render_target.attributes.extent,
+                    swapchain_extent.into(),
+                )
+                .transition_image_layout(swapchain_image, ImageLayoutState::present())
+                .submit(
+                    graphics_queue,
+                    (
+                        frame.image_available_semaphore,
+                        vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    ),
+                    (
+                        frame.render_finished_semaphore,
+                        vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+                    ),
+                    frame.in_flight_fence,
+                )?;
 
             self.swapchain
                 .present(image_index, frame.render_finished_semaphore)?;

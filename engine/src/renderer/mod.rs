@@ -1,10 +1,12 @@
+mod commands;
 mod swapchain;
 pub mod window_renderer;
 
+use crate::renderer::commands::Commands;
 use crate::rendering_context::{Image, ImageAttributes, ImageLayoutState, RenderingContext};
 use anyhow::Result;
 use ash::vk;
-use ash::vk::{CommandBuffer, Extent3D};
+use ash::vk::Extent3D;
 use gpu_allocator::vulkan::{AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
 use std::sync::Arc;
@@ -39,12 +41,14 @@ fn create_render_target(
                 .height(resolution.1)
                 .depth(1),
             format,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
-                | vk::ImageUsageFlags::TRANSFER_SRC
-                | vk::ImageUsageFlags::TRANSFER_DST,
+            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
             location: MemoryLocation::GpuOnly,
             linear: false,
             allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+            subresource_range: vk::ImageSubresourceRange::default()
+                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                .level_count(1)
+                .layer_count(1),
         },
     )
 }
@@ -111,79 +115,52 @@ impl Renderer {
 
     pub fn render(
         &mut self,
-        command_buffer: CommandBuffer,
+        commands: &Commands,
         clear_color: vk::ClearColorValue,
         render_target_index: usize,
-    ) -> Result<()> {
+    ) -> Result<&mut Image> {
         let render_target = &mut self.render_targets[render_target_index];
 
-        let state = ImageLayoutState {
-            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
-            access_mask: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
-            stage_mask: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
-            queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-        };
+        render_target.reset_layout();
 
         unsafe {
-            self.context.transition_image_layout(
-                command_buffer,
-                render_target.handle,
-                ImageLayoutState {
-                    layout: vk::ImageLayout::UNDEFINED,
-                    access_mask: vk::AccessFlags2::NONE,
-                    stage_mask: vk::PipelineStageFlags2::NONE,
-                    queue_family_index: vk::QUEUE_FAMILY_IGNORED,
-                },
-                state,
-            );
-            render_target.layout = state;
+            commands
+                .transition_image_layout(render_target, ImageLayoutState::color_attachment())
+                .begin_rendering(
+                    render_target.view,
+                    clear_color,
+                    vk::Rect2D::default().extent(
+                        vk::Extent2D::default()
+                            .width(render_target.attributes.extent.width)
+                            .height(render_target.attributes.extent.height),
+                    ),
+                );
+            self.draw(commands, render_target_index);
+            commands.end_rendering();
 
-            self.context.begin_rendering(
-                command_buffer,
-                render_target.view,
-                clear_color,
-                vk::Rect2D::default().extent(
-                    vk::Extent2D::default()
-                        .width(render_target.attributes.extent.width)
-                        .height(render_target.attributes.extent.height),
-                ),
-            );
-            self.draw(command_buffer, render_target_index);
-            self.context.device.cmd_end_rendering(command_buffer);
-
-            Ok(())
+            Ok(&mut self.render_targets[render_target_index])
         }
     }
 
-    pub fn draw(&self, command_buffer: CommandBuffer, render_target_index: usize) {
+    pub fn draw(&self, commands: &Commands, render_target_index: usize) {
         let render_target = &self.render_targets[render_target_index];
 
         unsafe {
-            self.context.device.cmd_set_viewport(
-                command_buffer,
-                0,
-                &[vk::Viewport::default()
-                    .width(render_target.attributes.extent.width as f32)
-                    .height(render_target.attributes.extent.height as f32)],
-            );
-
-            self.context.device.cmd_set_scissor(
-                command_buffer,
-                0,
-                &[vk::Rect2D::default().extent(
-                    vk::Extent2D::default()
-                        .width(render_target.attributes.extent.width)
-                        .height(render_target.attributes.extent.height),
-                )],
-            );
-
-            self.context.device.cmd_bind_pipeline(
-                command_buffer,
-                vk::PipelineBindPoint::GRAPHICS,
-                self.pipeline,
-            );
-
-            self.context.device.cmd_draw(command_buffer, 3, 1, 0, 0);
+            commands
+                .set_viewport(
+                    vk::Viewport::default()
+                        .width(render_target.attributes.extent.width as f32)
+                        .height(render_target.attributes.extent.height as f32),
+                )
+                .set_scissor(
+                    vk::Rect2D::default().extent(
+                        vk::Extent2D::default()
+                            .width(render_target.attributes.extent.width)
+                            .height(render_target.attributes.extent.height),
+                    ),
+                )
+                .bind_pipeline(self.pipeline)
+                .draw(0..3, 0..1);
         }
     }
 }

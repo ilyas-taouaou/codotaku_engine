@@ -1,7 +1,11 @@
-use crate::rendering_context::{RenderingContext, Surface};
+use crate::rendering_context::{
+    Image, ImageAttributes, ImageLayoutState, RenderingContext, Surface,
+};
 use anyhow::Result;
 use ash::vk;
 use ash::vk::AcquireNextImageInfoKHR;
+use gpu_allocator::vulkan::AllocationScheme;
+use gpu_allocator::MemoryLocation;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -9,8 +13,7 @@ pub struct Swapchain {
     pub desired_image_count: u32,
     pub format: vk::Format,
     pub extent: vk::Extent2D,
-    pub views: Vec<vk::ImageView>,
-    pub images: Vec<vk::Image>,
+    pub images: Vec<Image>,
     handle: vk::SwapchainKHR,
     surface: Surface,
     window: Arc<Window>,
@@ -19,7 +22,7 @@ pub struct Swapchain {
 }
 
 impl Swapchain {
-    pub(crate) fn new(context: Arc<RenderingContext>, window: Arc<Window>) -> Result<Self> {
+    pub fn new(context: Arc<RenderingContext>, window: Arc<Window>) -> Result<Self> {
         let surface = unsafe { context.create_surface(window.as_ref())? };
         let format = vk::Format::B8G8R8A8_SRGB;
         let extent = if surface.capabilities.current_extent.width != u32::MAX {
@@ -44,7 +47,6 @@ impl Swapchain {
             desired_image_count,
             format,
             extent,
-            views: Default::default(),
             images: Default::default(),
             handle: Default::default(),
             surface,
@@ -87,10 +89,9 @@ impl Swapchain {
                     .old_swapchain(self.handle),
                 None,
             )?;
-            self.views.drain(..).for_each(|image_view| {
-                self.context.device.destroy_image_view(image_view, None);
+            self.images.drain(..).for_each(|image| {
+                self.context.device.destroy_image_view(image.view, None);
             });
-            self.images.clear();
             self.context
                 .swapchain_extension
                 .destroy_swapchain(self.handle, None);
@@ -99,15 +100,40 @@ impl Swapchain {
             self.images = self
                 .context
                 .swapchain_extension
-                .get_swapchain_images(self.handle)?;
-
-            for image in &self.images {
-                self.views.push(self.context.create_image_view(
-                    *image,
-                    self.format,
-                    vk::ImageAspectFlags::COLOR,
-                )?);
-            }
+                .get_swapchain_images(self.handle)?
+                .into_iter()
+                .map(|handle| {
+                    let view = self.context.create_image_view(
+                        handle,
+                        self.format,
+                        vk::ImageAspectFlags::COLOR,
+                    )?;
+                    Ok(Image {
+                        handle,
+                        allocation: None,
+                        view,
+                        layout: ImageLayoutState {
+                            layout: vk::ImageLayout::UNDEFINED,
+                            access: vk::AccessFlags2::empty(),
+                            stage: vk::PipelineStageFlags2::empty(),
+                            queue_family: vk::QUEUE_FAMILY_IGNORED,
+                        },
+                        attributes: ImageAttributes {
+                            location: MemoryLocation::Unknown,
+                            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                            linear: false,
+                            extent: self.extent.into(),
+                            format: self.format,
+                            usage: vk::ImageUsageFlags::TRANSFER_DST
+                                | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                            subresource_range: vk::ImageSubresourceRange::default()
+                                .aspect_mask(vk::ImageAspectFlags::COLOR)
+                                .layer_count(1)
+                                .level_count(1),
+                        },
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
         }
         Ok(())
     }
@@ -157,8 +183,8 @@ impl Swapchain {
 impl Drop for Swapchain {
     fn drop(&mut self) {
         unsafe {
-            self.views.drain(..).for_each(|image_view| {
-                self.context.device.destroy_image_view(image_view, None);
+            self.images.drain(..).for_each(|image| {
+                self.context.device.destroy_image_view(image.view, None);
             });
             self.context
                 .swapchain_extension

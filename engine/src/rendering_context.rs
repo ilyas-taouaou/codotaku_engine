@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 use ash::vk;
-use ash::vk::{DeviceQueueInfo2, SurfaceCapabilitiesKHR};
+use ash::vk::{DeviceQueueInfo2, SurfaceCapabilitiesKHR, QUEUE_FAMILY_IGNORED};
 use gpu_allocator::vulkan::{
     Allocation, AllocationCreateDesc, AllocationScheme, Allocator, AllocatorCreateDesc,
 };
@@ -368,115 +368,6 @@ impl RenderingContext {
         }
     }
 
-    pub fn transition_image_layout(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        image: vk::Image,
-        old_state: ImageLayoutState,
-        new_state: ImageLayoutState,
-    ) {
-        unsafe {
-            let aspect_mask =
-                if new_state.layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
-                    vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
-                } else {
-                    vk::ImageAspectFlags::COLOR
-                };
-
-            self.device.cmd_pipeline_barrier2(
-                command_buffer,
-                &vk::DependencyInfo::default().image_memory_barriers(&[
-                    vk::ImageMemoryBarrier2KHR::default()
-                        .src_stage_mask(old_state.stage_mask)
-                        .dst_stage_mask(new_state.stage_mask)
-                        .src_access_mask(old_state.access_mask)
-                        .dst_access_mask(new_state.access_mask)
-                        .old_layout(old_state.layout)
-                        .new_layout(new_state.layout)
-                        .src_queue_family_index(old_state.queue_family_index)
-                        .dst_queue_family_index(new_state.queue_family_index)
-                        .image(image)
-                        .subresource_range(
-                            vk::ImageSubresourceRange::default()
-                                .aspect_mask(aspect_mask)
-                                .base_mip_level(0)
-                                .level_count(1)
-                                .base_array_layer(0)
-                                .layer_count(1),
-                        ),
-                ]),
-            );
-        }
-    }
-
-    pub fn blit_image(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        src_image: vk::Image,
-        dst_image: vk::Image,
-        src_extent: vk::Extent3D,
-        dst_extent: vk::Extent3D,
-    ) {
-        let subresource = vk::ImageSubresourceLayers::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .mip_level(0)
-            .base_array_layer(0)
-            .layer_count(1);
-
-        unsafe {
-            self.device.cmd_blit_image(
-                command_buffer,
-                src_image,
-                vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
-                dst_image,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &[vk::ImageBlit::default()
-                    .src_subresource(subresource)
-                    .src_offsets([
-                        vk::Offset3D::default(),
-                        vk::Offset3D {
-                            x: src_extent.width as i32,
-                            y: src_extent.height as i32,
-                            z: src_extent.depth as i32,
-                        },
-                    ])
-                    .dst_subresource(subresource)
-                    .dst_offsets([
-                        vk::Offset3D::default(),
-                        vk::Offset3D {
-                            x: dst_extent.width as i32,
-                            y: dst_extent.height as i32,
-                            z: 1,
-                        },
-                    ])],
-                vk::Filter::NEAREST,
-            );
-        }
-    }
-
-    pub fn begin_rendering(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        view: vk::ImageView,
-        clear_color: vk::ClearColorValue,
-        render_area: vk::Rect2D,
-    ) {
-        unsafe {
-            self.device.cmd_begin_rendering(
-                command_buffer,
-                &vk::RenderingInfo::default()
-                    .layer_count(1)
-                    .color_attachments(&[vk::RenderingAttachmentInfo::default()
-                        .image_view(view)
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
-                        .clear_value(vk::ClearValue { color: clear_color })
-                        .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .store_op(vk::AttachmentStoreOp::STORE)])
-                    .render_area(render_area),
-            );
-        }
-    }
-
     pub fn create_allocator(
         &self,
         debug_settings: AllocatorDebugSettings,
@@ -537,10 +428,10 @@ impl RenderingContext {
             allocation: Some(allocation),
             view,
             layout: ImageLayoutState {
-                access_mask: vk::AccessFlags2::empty(),
+                access: vk::AccessFlags2::empty(),
                 layout: vk::ImageLayout::UNDEFINED,
-                stage_mask: vk::PipelineStageFlags2::empty(),
-                queue_family_index: 0,
+                stage: vk::PipelineStageFlags2::empty(),
+                queue_family: 0,
             },
             attributes,
         })
@@ -556,30 +447,6 @@ impl RenderingContext {
         }
         Ok(())
     }
-
-    pub fn clear_image(
-        &self,
-        command_buffer: vk::CommandBuffer,
-        image: Image,
-        clear_color: [f32; 4],
-    ) {
-        unsafe {
-            self.device.cmd_clear_color_image(
-                command_buffer,
-                image.handle,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &vk::ClearColorValue {
-                    float32: clear_color,
-                },
-                &[vk::ImageSubresourceRange::default()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)],
-            )
-        }
-    }
 }
 
 pub struct ImageAttributes {
@@ -589,6 +456,7 @@ pub struct ImageAttributes {
     pub extent: vk::Extent3D,
     pub format: vk::Format,
     pub usage: vk::ImageUsageFlags,
+    pub subresource_range: vk::ImageSubresourceRange,
 }
 
 pub struct Image {
@@ -599,12 +467,76 @@ pub struct Image {
     pub attributes: ImageAttributes,
 }
 
+impl Image {
+    pub fn reset_layout(&mut self) {
+        self.layout = Default::default();
+    }
+}
+
 #[derive(Clone, Copy)]
 pub struct ImageLayoutState {
-    pub access_mask: vk::AccessFlags2,
+    pub access: vk::AccessFlags2,
     pub layout: vk::ImageLayout,
-    pub stage_mask: vk::PipelineStageFlags2,
-    pub queue_family_index: u32,
+    pub stage: vk::PipelineStageFlags2,
+    pub queue_family: u32,
+}
+
+impl ImageLayoutState {
+    pub fn general() -> Self {
+        Self {
+            access: vk::AccessFlags2::MEMORY_READ | vk::AccessFlags2::MEMORY_WRITE,
+            layout: vk::ImageLayout::GENERAL,
+            stage: vk::PipelineStageFlags2::ALL_COMMANDS,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+
+    pub fn color_attachment() -> Self {
+        Self {
+            access: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
+            layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
+            stage: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+
+    pub fn present() -> Self {
+        Self {
+            access: vk::AccessFlags2::TRANSFER_READ,
+            layout: vk::ImageLayout::PRESENT_SRC_KHR,
+            stage: vk::PipelineStageFlags2::TRANSFER,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+
+    pub fn transfer_destination() -> Self {
+        Self {
+            access: vk::AccessFlags2::TRANSFER_WRITE,
+            layout: vk::ImageLayout::TRANSFER_DST_OPTIMAL,
+            stage: vk::PipelineStageFlags2::TRANSFER,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+
+    pub fn transfer_source() -> Self {
+        Self {
+            access: vk::AccessFlags2::TRANSFER_READ,
+            layout: vk::ImageLayout::TRANSFER_SRC_OPTIMAL,
+            stage: vk::PipelineStageFlags2::TRANSFER,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+}
+
+impl Default for ImageLayoutState {
+    fn default() -> Self {
+        Self {
+            access: vk::AccessFlags2::empty(),
+            layout: vk::ImageLayout::UNDEFINED,
+            stage: vk::PipelineStageFlags2::empty(),
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
 }
 
 pub struct Surface {
