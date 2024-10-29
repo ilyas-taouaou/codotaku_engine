@@ -1,14 +1,17 @@
 mod commands;
+mod geometry;
+mod staging_belt;
 mod swapchain;
 pub mod window_renderer;
 
-use crate::buffer::{Buffer, BufferAttributes};
 use crate::renderer::commands::Commands;
+use crate::renderer::geometry::{Circle, GPUGeometry};
+use crate::renderer::staging_belt::StagingBelt;
 use crate::rendering_context::{Image, RenderingContext};
 use anyhow::Result;
 use ash::vk;
-use gpu_allocator::vulkan::{AllocationScheme, Allocator};
-use gpu_allocator::MemoryLocation;
+use geometry::Geometry;
+use gpu_allocator::vulkan::Allocator;
 use std::sync::Arc;
 
 pub struct Renderer {
@@ -18,12 +21,8 @@ pub struct Renderer {
     context: Arc<RenderingContext>,
     render_targets: Vec<Image>,
     format: vk::Format,
-
-    vertex_buffer: Buffer,
-    index_buffer: Buffer,
-    staging_buffer: Buffer,
-
-    indices_count: u32,
+    staging_belt: StagingBelt,
+    gpu_geometry: GPUGeometry,
 }
 
 const SHADERS_DIR: &str = "res/shaders/";
@@ -31,15 +30,6 @@ const SHADERS_DIR: &str = "res/shaders/";
 fn load_shader_module(context: &RenderingContext, path: &str) -> Result<vk::ShaderModule> {
     let code = std::fs::read(format!("{}{}", SHADERS_DIR, path))?;
     context.create_shader_module(&code)
-}
-
-use nalgebra as na;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: na::Vector3<f32>,
-    color: na::Vector3<f32>,
 }
 
 #[repr(C)]
@@ -95,76 +85,19 @@ impl Renderer {
             context.device.destroy_shader_module(vertex_shader, None);
             context.device.destroy_shader_module(fragment_shader, None);
 
-            // generate circle vertices and indices
-            let radius = 1.0;
-            let segments = 24;
-            let mut vertices = Vec::with_capacity(segments + 1);
-            vertices.push(Vertex {
-                position: na::Vector3::new(0.0, 0.0, 0.0),
-                color: na::Vector3::new(1.0, 1.0, 1.0),
-            });
-            for i in 0..segments {
-                let angle = 2.0 * std::f32::consts::PI * (i as f32) / (segments as f32);
-                vertices.push(Vertex {
-                    position: na::Vector3::new(radius * angle.cos(), radius * angle.sin(), 0.0),
-                    color: na::Vector3::new(1.0, 1.0, 1.0),
-                });
-            }
-            let mut indices = Vec::with_capacity(segments * 3);
-            for i in 0..segments {
-                indices.push(0);
-                indices.push(i as u32 + 1);
-                indices.push(((i + 1) % segments) as u32 + 1);
-            }
+            let gpu_geometry = Geometry::new_circle(Circle {
+                radius: 0.5,
+                segments: 32,
+            })
+            .create_gpu_geometry(context.clone(), &mut allocator)?;
 
-            let mut vertex_buffer = Buffer::new(
+            let mut staging_belt = StagingBelt::new(
+                context.clone(),
                 &mut allocator,
-                BufferAttributes {
-                    name: "vertex_buffer".into(),
-                    context: context.clone(),
-                    size: (vertices.len() * size_of::<Vertex>()) as vk::DeviceSize,
-                    usage: vk::BufferUsageFlags::VERTEX_BUFFER
-                        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
-                        | vk::BufferUsageFlags::TRANSFER_DST,
-                    location: MemoryLocation::GpuOnly,
-                    allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                },
+                gpu_geometry.geometry.size() as vk::DeviceSize,
             )?;
 
-            let mut index_buffer = Buffer::new(
-                &mut allocator,
-                BufferAttributes {
-                    name: "index_buffer".into(),
-                    context: context.clone(),
-                    size: (indices.len() * size_of::<u32>()) as vk::DeviceSize,
-                    usage: vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
-                    location: MemoryLocation::GpuOnly,
-                    allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                },
-            )?;
-
-            let mut staging_buffer = Buffer::new(
-                &mut allocator,
-                BufferAttributes {
-                    name: "staging_buffer".into(),
-                    context: context.clone(),
-                    size: vertex_buffer.attributes.size + index_buffer.attributes.size,
-                    usage: vk::BufferUsageFlags::TRANSFER_SRC,
-                    location: MemoryLocation::CpuToGpu,
-                    allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                },
-            )?;
-            staging_buffer.write(&vertices, 0)?;
-            staging_buffer.write(&indices, vertex_buffer.attributes.size)?;
-
-            commands.copy_buffer(&staging_buffer, &vertex_buffer, 0);
-            commands.copy_buffer(
-                &staging_buffer,
-                &index_buffer,
-                vertex_buffer.attributes.size,
-            );
-
-            let indices_count = indices.len() as u32;
+            staging_belt.stage_geometry(&gpu_geometry, commands)?.done();
 
             Ok(Self {
                 allocator,
@@ -173,10 +106,8 @@ impl Renderer {
                 context,
                 render_targets,
                 format,
-                vertex_buffer,
-                index_buffer,
-                staging_buffer,
-                indices_count,
+                staging_belt,
+                gpu_geometry,
             })
         }
     }
@@ -237,14 +168,14 @@ impl Renderer {
                 ),
             )
             .bind_pipeline(self.pipeline)
-            .bind_index_buffer(&self.index_buffer)
+            .bind_index_buffer(&self.gpu_geometry.index_buffer)
             .set_push_constants(
                 self.pipeline_layout,
                 PushConstants {
-                    vertex_buffer_address: self.vertex_buffer.address,
+                    vertex_buffer_address: self.gpu_geometry.vertex_buffer.address,
                 },
             )
-            .draw_indexed(0..self.indices_count, 0..1);
+            .draw_indexed(0..self.gpu_geometry.geometry.indices.len() as u32, 0..1);
     }
 }
 
@@ -253,10 +184,8 @@ impl Drop for Renderer {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
 
-            self.index_buffer.destroy(&mut self.allocator).unwrap();
-            self.staging_buffer.destroy(&mut self.allocator).unwrap();
-            self.vertex_buffer.destroy(&mut self.allocator).unwrap();
-
+            self.staging_belt.destroy(&mut self.allocator).unwrap();
+            self.gpu_geometry.destroy(&mut self.allocator).unwrap();
             for render_target in self.render_targets.iter_mut() {
                 render_target.destroy(&mut self.allocator).unwrap();
             }
