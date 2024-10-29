@@ -97,6 +97,17 @@ pub mod queue_family_picker {
     }
 }
 
+macro_rules! check_feature {
+    ($features:expr, $feature_name:ident) => {
+        if $features.$feature_name == vk::FALSE {
+            return Err(anyhow::anyhow!(concat!(
+                "Physical device does not support ",
+                stringify!($feature_name)
+            )));
+        }
+    };
+}
+
 impl RenderingContext {
     pub fn new(attributes: RenderingContextAttributes) -> Result<Self> {
         unsafe {
@@ -174,35 +185,14 @@ impl RenderingContext {
             let (physical_device, queue_families) =
                 (attributes.queue_family_picker)(physical_devices)?;
 
-            if physical_device.vulkan12_features.buffer_device_address == vk::FALSE {
-                return Err(anyhow::anyhow!(
-                    "Physical device does not support buffer device address"
-                ));
-            }
+            let features12 = physical_device.vulkan12_features;
+            let features13 = physical_device.vulkan13_features;
 
-            if physical_device.vulkan12_features.descriptor_indexing == vk::FALSE {
-                return Err(anyhow::anyhow!(
-                    "Physical device does not support descriptor indexing"
-                ));
-            }
-
-            if physical_device.vulkan12_features.scalar_block_layout == vk::FALSE {
-                return Err(anyhow::anyhow!(
-                    "Physical device does not support scalar block layout"
-                ));
-            }
-
-            if physical_device.vulkan13_features.dynamic_rendering == vk::FALSE {
-                return Err(anyhow::anyhow!(
-                    "Physical device does not support dynamic rendering"
-                ));
-            }
-
-            if physical_device.vulkan13_features.synchronization2 == vk::FALSE {
-                return Err(anyhow::anyhow!(
-                    "Physical device does not support synchronization2"
-                ));
-            }
+            check_feature!(features12, buffer_device_address);
+            check_feature!(features12, descriptor_indexing);
+            check_feature!(features12, scalar_block_layout);
+            check_feature!(features13, dynamic_rendering);
+            check_feature!(features13, synchronization2);
 
             let queue_family_indices = HashSet::from([
                 queue_families.graphics,
