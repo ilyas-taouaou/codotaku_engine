@@ -4,7 +4,7 @@ pub mod window_renderer;
 
 use crate::buffer::{Buffer, BufferAttributes};
 use crate::renderer::commands::Commands;
-use crate::rendering_context::{Image, ImageLayoutState, RenderingContext};
+use crate::rendering_context::{Image, RenderingContext};
 use anyhow::Result;
 use ash::vk;
 use gpu_allocator::vulkan::{AllocationScheme, Allocator};
@@ -206,17 +206,15 @@ impl Renderer {
 
         render_target.reset_layout();
 
-        commands
-            .transition_image_layout(render_target, ImageLayoutState::color_attachment())
-            .begin_rendering(
-                render_target,
-                clear_color,
-                vk::Rect2D::default().extent(
-                    vk::Extent2D::default()
-                        .width(render_target.attributes.extent.width)
-                        .height(render_target.attributes.extent.height),
-                ),
-            );
+        commands.begin_rendering(
+            render_target,
+            clear_color,
+            vk::Rect2D::default().extent(
+                vk::Extent2D::default()
+                    .width(render_target.attributes.extent.width)
+                    .height(render_target.attributes.extent.height),
+            ),
+        );
         self.draw(commands, render_target_index);
         commands.end_rendering();
 

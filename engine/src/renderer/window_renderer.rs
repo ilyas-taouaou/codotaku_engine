@@ -8,6 +8,7 @@ use winit::window::Window;
 
 use crate::renderer::commands::Commands;
 use anyhow::Result;
+use tracing::trace;
 
 struct Frame {
     command_buffer: CommandBuffer,
@@ -158,6 +159,12 @@ impl WindowRenderer {
                 }
             };
 
+            trace!(
+                "Rendering frame {} to image {}",
+                self.frame_index,
+                image_index
+            );
+
             let graphics_queue = self.context.queues[self.context.queue_families.graphics as usize];
 
             self.context.device.reset_fences(&[frame.in_flight_fence])?;
@@ -170,8 +177,6 @@ impl WindowRenderer {
                 self.renderer
                     .render(&commands, self.clear_color, self.frame_index)?;
             commands
-                .transition_image_layout(swapchain_image, ImageLayoutState::transfer_destination())
-                .transition_image_layout(render_target, ImageLayoutState::transfer_source())
                 .blit_full_image(render_target, swapchain_image)
                 .transition_image_layout(swapchain_image, ImageLayoutState::present())
                 .submit(

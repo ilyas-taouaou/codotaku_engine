@@ -7,7 +7,10 @@ use winit::event_loop::{ControlFlow, EventLoop};
 mod app;
 
 fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .init();
+
     let mut app = App::default();
 
     let event_loop = EventLoop::new()?;

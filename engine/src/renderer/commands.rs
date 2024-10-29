@@ -5,6 +5,7 @@ use ash::vk;
 use ash::vk::DeviceSize;
 use std::ops::Range;
 use std::sync::Arc;
+use tracing::trace;
 
 pub struct Commands {
     context: Arc<RenderingContext>,
@@ -86,6 +87,8 @@ impl Commands {
         unsafe {
             let old_state = image.layout;
 
+            trace!("Transitioned image layout from {old_state:#?} to {new_state:#?}");
+
             self.context.device.cmd_pipeline_barrier2(
                 self.command_buffer,
                 &vk::DependencyInfo::default().image_memory_barriers(&[
@@ -108,13 +111,24 @@ impl Commands {
         self
     }
 
+    pub fn ensure_image_layout(&self, image: &mut Image, new_state: ImageLayoutState) -> &Self {
+        let state = image.layout;
+        if !new_state.is_subset_of(state) {
+            self.transition_image_layout(image, new_state);
+        }
+        self
+    }
+
     pub fn blit_image(
         &self,
-        src_image: &Image,
-        dst_image: &Image,
+        src_image: &mut Image,
+        dst_image: &mut Image,
         src_offsets: [vk::Offset3D; 2],
         dst_offsets: [vk::Offset3D; 2],
     ) -> &Self {
+        self.ensure_image_layout(src_image, ImageLayoutState::transfer_source())
+            .ensure_image_layout(dst_image, ImageLayoutState::transfer_destination());
+
         unsafe {
             self.context.device.cmd_blit_image(
                 self.command_buffer,
@@ -136,8 +150,8 @@ impl Commands {
 
     pub fn blit_image_extent(
         &self,
-        src_image: &Image,
-        dst_image: &Image,
+        src_image: &mut Image,
+        dst_image: &mut Image,
         src_extent: vk::Extent3D,
         dst_extent: vk::Extent3D,
     ) -> &Self {
@@ -163,7 +177,7 @@ impl Commands {
         )
     }
 
-    pub fn blit_full_image(&self, src_image: &Image, dst_image: &Image) -> &Self {
+    pub fn blit_full_image(&self, src_image: &mut Image, dst_image: &mut Image) -> &Self {
         self.blit_image_extent(
             src_image,
             dst_image,
@@ -174,10 +188,12 @@ impl Commands {
 
     pub fn begin_rendering(
         &self,
-        image: &Image,
+        image: &mut Image,
         clear_color: vk::ClearColorValue,
         render_area: vk::Rect2D,
     ) -> &Self {
+        self.ensure_image_layout(image, ImageLayoutState::color_attachment());
+
         unsafe {
             self.context.device.cmd_begin_rendering(
                 self.command_buffer,

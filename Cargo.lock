@@ -272,6 +272,7 @@ name = "codotaku_engine"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "tracing",
  "tracing-subscriber",
 ]
 

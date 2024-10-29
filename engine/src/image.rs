@@ -181,7 +181,7 @@ impl Image {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct ImageLayoutState {
     pub access: vk::AccessFlags2,
     pub layout: vk::ImageLayout,
@@ -233,6 +233,14 @@ impl ImageLayoutState {
             stage: vk::PipelineStageFlags2::TRANSFER,
             queue_family: QUEUE_FAMILY_IGNORED,
         }
+    }
+
+    pub fn is_subset_of(&self, other: Self) -> bool {
+        self.layout == other.layout
+            && self.access.contains(other.access)
+            && self.stage.contains(other.stage)
+            && (self.queue_family == QUEUE_FAMILY_IGNORED
+                || self.queue_family == other.queue_family)
     }
 }
 
