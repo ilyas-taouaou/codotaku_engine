@@ -80,7 +80,7 @@ impl WindowRenderer {
 
             let renderer = Renderer::new(
                 context.clone(),
-                (swapchain.extent.width, swapchain.extent.height),
+                swapchain.extent,
                 format,
                 in_flight_frames_count,
             )?;
@@ -118,8 +118,7 @@ impl WindowRenderer {
                 if swapchain_extent.width == 0 || swapchain_extent.height == 0 {
                     return Ok(());
                 }
-                self.renderer
-                    .resize((swapchain_extent.width, swapchain_extent.height))?;
+                self.renderer.resize(swapchain_extent)?;
             }
 
             let swapchain_extent = self.swapchain.extent;

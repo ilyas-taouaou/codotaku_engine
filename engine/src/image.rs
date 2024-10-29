@@ -1,7 +1,10 @@
+use crate::rendering_context::RenderingContext;
+use anyhow::Result;
 use ash::vk;
 use ash::vk::QUEUE_FAMILY_IGNORED;
-use gpu_allocator::vulkan::{Allocation, AllocationScheme};
+use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
+use std::sync::Arc;
 
 pub struct ImageAttributes {
     pub location: MemoryLocation,
@@ -19,11 +22,154 @@ pub struct Image {
     pub view: vk::ImageView,
     pub layout: ImageLayoutState,
     pub attributes: ImageAttributes,
+    context: Arc<RenderingContext>,
+}
+
+fn create_image_view(
+    context: &RenderingContext,
+    image: vk::Image,
+    format: vk::Format,
+    aspect_flags: vk::ImageAspectFlags,
+) -> Result<vk::ImageView> {
+    let image_view = unsafe {
+        context.device.create_image_view(
+            &vk::ImageViewCreateInfo::default()
+                .image(image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(format)
+                .components(vk::ComponentMapping::default())
+                .subresource_range(
+                    vk::ImageSubresourceRange::default()
+                        .aspect_mask(aspect_flags)
+                        .base_mip_level(0)
+                        .level_count(1)
+                        .base_array_layer(0)
+                        .layer_count(1),
+                ),
+            None,
+        )
+    }?;
+    Ok(image_view)
 }
 
 impl Image {
+    pub fn new(
+        context: Arc<RenderingContext>,
+        allocator: &mut Allocator,
+        name: &str,
+        attributes: ImageAttributes,
+    ) -> Result<Self> {
+        let image = unsafe {
+            context.device.create_image(
+                &vk::ImageCreateInfo::default()
+                    .image_type(vk::ImageType::TYPE_2D)
+                    .format(attributes.format)
+                    .extent(attributes.extent)
+                    .mip_levels(1)
+                    .array_layers(1)
+                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .tiling(vk::ImageTiling::OPTIMAL)
+                    .usage(attributes.usage)
+                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
+                    .initial_layout(vk::ImageLayout::UNDEFINED),
+                None,
+            )
+        }?;
+
+        let requirements = unsafe { context.device.get_image_memory_requirements(image) };
+
+        let allocation = allocator.allocate(&AllocationCreateDesc {
+            name,
+            requirements,
+            location: attributes.location,
+            linear: attributes.linear,
+            allocation_scheme: attributes.allocation_scheme,
+        })?;
+
+        unsafe {
+            context
+                .device
+                .bind_image_memory(image, allocation.memory(), allocation.offset())
+        }?;
+
+        let view = create_image_view(
+            context.as_ref(),
+            image,
+            attributes.format,
+            attributes.subresource_range.aspect_mask,
+        )?;
+
+        Ok(Image {
+            handle: image,
+            allocation: Some(allocation),
+            view,
+            layout: ImageLayoutState::ignored(),
+            attributes,
+            context,
+        })
+    }
+
+    pub fn new_render_target(
+        context: Arc<RenderingContext>,
+        allocator: &mut Allocator,
+        name: &str,
+        extent: vk::Extent2D,
+        format: vk::Format,
+    ) -> Result<Image> {
+        Image::new(
+            context,
+            allocator,
+            name,
+            ImageAttributes {
+                extent: extent.into(),
+                format,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
+                location: MemoryLocation::GpuOnly,
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                subresource_range: vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .level_count(1)
+                    .layer_count(1),
+            },
+        )
+    }
+
+    pub fn wrap(
+        context: Arc<RenderingContext>,
+        handle: vk::Image,
+        attributes: ImageAttributes,
+    ) -> Result<Self> {
+        let view = create_image_view(
+            context.as_ref(),
+            handle,
+            attributes.format,
+            attributes.subresource_range.aspect_mask,
+        )?;
+
+        Ok(Self {
+            handle,
+            allocation: None,
+            view,
+            layout: ImageLayoutState::ignored(),
+            attributes,
+            context,
+        })
+    }
+
     pub fn reset_layout(&mut self) {
         self.layout = ImageLayoutState::ignored();
+    }
+
+    pub fn destroy(&mut self, allocator: &mut Allocator) -> Result<()> {
+        unsafe {
+            self.context.device.destroy_image_view(self.view, None);
+            if let Some(allocation) = self.allocation.take() {
+                self.context.device.destroy_image(self.handle, None);
+                allocator.free(allocation)?;
+            }
+        }
+        Ok(())
     }
 }
 

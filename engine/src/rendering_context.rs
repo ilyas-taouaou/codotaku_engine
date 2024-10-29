@@ -8,7 +8,7 @@ pub use crate::image::{Image, ImageAttributes, ImageLayoutState};
 use anyhow::Result;
 use ash::vk;
 use ash::vk::{DeviceQueueInfo2, SurfaceCapabilitiesKHR};
-use gpu_allocator::vulkan::{AllocationCreateDesc, Allocator, AllocatorCreateDesc};
+use gpu_allocator::vulkan::{Allocator, AllocatorCreateDesc};
 use gpu_allocator::{AllocationSizes, AllocatorDebugSettings};
 use std::collections::HashSet;
 use std::io;
@@ -254,33 +254,6 @@ impl RenderingContext {
         })
     }
 
-    pub fn create_image_view(
-        &self,
-        image: vk::Image,
-        format: vk::Format,
-        aspect_flags: vk::ImageAspectFlags,
-    ) -> Result<vk::ImageView> {
-        let image_view = unsafe {
-            self.device.create_image_view(
-                &vk::ImageViewCreateInfo::default()
-                    .image(image)
-                    .view_type(vk::ImageViewType::TYPE_2D)
-                    .format(format)
-                    .components(vk::ComponentMapping::default())
-                    .subresource_range(
-                        vk::ImageSubresourceRange::default()
-                            .aspect_mask(aspect_flags)
-                            .base_mip_level(0)
-                            .level_count(1)
-                            .base_array_layer(0)
-                            .layer_count(1),
-                    ),
-                None,
-            )
-        }?;
-        Ok(image_view)
-    }
-
     pub fn create_shader_module(&self, code: &[u8]) -> Result<vk::ShaderModule> {
         let mut code = io::Cursor::new(code);
         let code = ash::util::read_spv(&mut code)?;
@@ -380,71 +353,6 @@ impl RenderingContext {
             buffer_device_address: true,
             allocation_sizes,
         })?)
-    }
-
-    pub fn create_image(
-        &self,
-        allocator: &mut Allocator,
-        name: &str,
-        attributes: ImageAttributes,
-    ) -> Result<Image> {
-        let image = unsafe {
-            self.device.create_image(
-                &vk::ImageCreateInfo::default()
-                    .image_type(vk::ImageType::TYPE_2D)
-                    .format(attributes.format)
-                    .extent(attributes.extent)
-                    .mip_levels(1)
-                    .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
-                    .tiling(vk::ImageTiling::OPTIMAL)
-                    .usage(attributes.usage)
-                    .sharing_mode(vk::SharingMode::EXCLUSIVE)
-                    .initial_layout(vk::ImageLayout::UNDEFINED),
-                None,
-            )
-        }?;
-
-        let requirements = unsafe { self.device.get_image_memory_requirements(image) };
-
-        let allocation = allocator.allocate(&AllocationCreateDesc {
-            name,
-            requirements,
-            location: attributes.location,
-            linear: attributes.linear,
-            allocation_scheme: attributes.allocation_scheme,
-        })?;
-
-        unsafe {
-            self.device
-                .bind_image_memory(image, allocation.memory(), allocation.offset())
-        }?;
-
-        let view = self.create_image_view(image, attributes.format, vk::ImageAspectFlags::COLOR)?;
-
-        Ok(Image {
-            handle: image,
-            allocation: Some(allocation),
-            view,
-            layout: ImageLayoutState {
-                access: vk::AccessFlags2::empty(),
-                layout: vk::ImageLayout::UNDEFINED,
-                stage: vk::PipelineStageFlags2::empty(),
-                queue_family: 0,
-            },
-            attributes,
-        })
-    }
-
-    pub fn destroy_image(&self, allocator: &mut Allocator, image: &mut Image) -> Result<()> {
-        unsafe {
-            self.device.destroy_image_view(image.view, None);
-            if let Some(allocation) = image.allocation.take() {
-                allocator.free(allocation)?;
-            }
-            self.device.destroy_image(image.handle, None);
-        }
-        Ok(())
     }
 }
 

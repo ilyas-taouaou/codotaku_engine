@@ -1,6 +1,4 @@
-use crate::rendering_context::{
-    Image, ImageAttributes, ImageLayoutState, RenderingContext, Surface,
-};
+use crate::rendering_context::{Image, ImageAttributes, RenderingContext, Surface};
 use anyhow::Result;
 use ash::vk;
 use ash::vk::AcquireNextImageInfoKHR;
@@ -103,35 +101,23 @@ impl Swapchain {
                 .get_swapchain_images(self.handle)?
                 .into_iter()
                 .map(|handle| {
-                    let view = self.context.create_image_view(
+                    Ok(Image::wrap(
+                        self.context.clone(),
                         handle,
-                        self.format,
-                        vk::ImageAspectFlags::COLOR,
-                    )?;
-                    Ok(Image {
-                        handle,
-                        allocation: None,
-                        view,
-                        layout: ImageLayoutState {
-                            layout: vk::ImageLayout::UNDEFINED,
-                            access: vk::AccessFlags2::empty(),
-                            stage: vk::PipelineStageFlags2::empty(),
-                            queue_family: vk::QUEUE_FAMILY_IGNORED,
-                        },
-                        attributes: ImageAttributes {
-                            location: MemoryLocation::Unknown,
-                            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-                            linear: false,
-                            extent: self.extent.into(),
+                        ImageAttributes {
                             format: self.format,
+                            extent: self.extent.into(),
                             usage: vk::ImageUsageFlags::TRANSFER_DST
                                 | vk::ImageUsageFlags::COLOR_ATTACHMENT,
+                            location: MemoryLocation::Unknown,
+                            linear: false,
+                            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
                             subresource_range: vk::ImageSubresourceRange::default()
                                 .aspect_mask(vk::ImageAspectFlags::COLOR)
-                                .layer_count(1)
-                                .level_count(1),
+                                .level_count(1)
+                                .layer_count(1),
                         },
-                    })
+                    )?)
                 })
                 .collect::<Result<Vec<_>>>()?;
         }

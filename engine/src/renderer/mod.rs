@@ -3,12 +3,10 @@ mod swapchain;
 pub mod window_renderer;
 
 use crate::renderer::commands::Commands;
-use crate::rendering_context::{Image, ImageAttributes, ImageLayoutState, RenderingContext};
+use crate::rendering_context::{Image, ImageLayoutState, RenderingContext};
 use anyhow::Result;
 use ash::vk;
-use ash::vk::Extent3D;
-use gpu_allocator::vulkan::{AllocationScheme, Allocator};
-use gpu_allocator::MemoryLocation;
+use gpu_allocator::vulkan::Allocator;
 use std::sync::Arc;
 
 pub struct Renderer {
@@ -17,6 +15,7 @@ pub struct Renderer {
     pipeline_layout: vk::PipelineLayout,
     context: Arc<RenderingContext>,
     render_targets: Vec<Image>,
+    format: vk::Format,
 }
 
 const SHADERS_DIR: &str = "res/shaders/";
@@ -26,37 +25,10 @@ fn load_shader_module(context: &RenderingContext, path: &str) -> Result<vk::Shad
     context.create_shader_module(&code)
 }
 
-fn create_render_target(
-    context: &RenderingContext,
-    allocator: &mut Allocator,
-    resolution: (u32, u32),
-    format: vk::Format,
-) -> Result<Image> {
-    context.create_image(
-        allocator,
-        "render target",
-        ImageAttributes {
-            extent: Extent3D::default()
-                .width(resolution.0)
-                .height(resolution.1)
-                .depth(1),
-            format,
-            usage: vk::ImageUsageFlags::COLOR_ATTACHMENT | vk::ImageUsageFlags::TRANSFER_SRC,
-            location: MemoryLocation::GpuOnly,
-            linear: false,
-            allocation_scheme: AllocationScheme::GpuAllocatorManaged,
-            subresource_range: vk::ImageSubresourceRange::default()
-                .aspect_mask(vk::ImageAspectFlags::COLOR)
-                .level_count(1)
-                .layer_count(1),
-        },
-    )
-}
-
 impl Renderer {
     pub fn new(
         context: Arc<RenderingContext>,
-        resolution: (u32, u32),
+        resolution: vk::Extent2D,
         format: vk::Format,
         buffering: usize,
     ) -> Result<Self> {
@@ -66,7 +38,15 @@ impl Renderer {
         let mut allocator = context.create_allocator(Default::default(), Default::default())?;
 
         let render_targets = (0..buffering)
-            .map(|_| create_render_target(context.as_ref(), &mut allocator, resolution, format))
+            .map(|_| {
+                Image::new_render_target(
+                    context.clone(),
+                    &mut allocator,
+                    "render_target",
+                    resolution,
+                    format,
+                )
+            })
             .collect::<Result<Vec<_>>>()?;
 
         unsafe {
@@ -77,10 +57,7 @@ impl Renderer {
             let pipeline = context.create_graphics_pipeline(
                 vertex_shader,
                 fragment_shader,
-                vk::Extent2D {
-                    width: resolution.0,
-                    height: resolution.1,
-                },
+                resolution,
                 format,
                 pipeline_layout,
                 Default::default(),
@@ -95,19 +72,20 @@ impl Renderer {
                 pipeline_layout,
                 context,
                 render_targets,
+                format,
             })
         }
     }
 
-    pub fn resize(&mut self, resolution: (u32, u32)) -> Result<()> {
+    pub fn resize(&mut self, resolution: vk::Extent2D) -> Result<()> {
         for render_target in self.render_targets.iter_mut() {
-            self.context
-                .destroy_image(&mut self.allocator, render_target)?;
-            *render_target = create_render_target(
-                self.context.as_ref(),
+            render_target.destroy(&mut self.allocator)?;
+            *render_target = Image::new_render_target(
+                self.context.clone(),
                 &mut self.allocator,
+                "render_target",
                 resolution,
-                render_target.attributes.format,
+                self.format,
             )?;
         }
         Ok(())
@@ -123,45 +101,41 @@ impl Renderer {
 
         render_target.reset_layout();
 
-        unsafe {
-            commands
-                .transition_image_layout(render_target, ImageLayoutState::color_attachment())
-                .begin_rendering(
-                    render_target.view,
-                    clear_color,
-                    vk::Rect2D::default().extent(
-                        vk::Extent2D::default()
-                            .width(render_target.attributes.extent.width)
-                            .height(render_target.attributes.extent.height),
-                    ),
-                );
-            self.draw(commands, render_target_index);
-            commands.end_rendering();
+        commands
+            .transition_image_layout(render_target, ImageLayoutState::color_attachment())
+            .begin_rendering(
+                render_target.view,
+                clear_color,
+                vk::Rect2D::default().extent(
+                    vk::Extent2D::default()
+                        .width(render_target.attributes.extent.width)
+                        .height(render_target.attributes.extent.height),
+                ),
+            );
+        self.draw(commands, render_target_index);
+        commands.end_rendering();
 
-            Ok(&mut self.render_targets[render_target_index])
-        }
+        Ok(&mut self.render_targets[render_target_index])
     }
 
     pub fn draw(&self, commands: &Commands, render_target_index: usize) {
         let render_target = &self.render_targets[render_target_index];
 
-        unsafe {
-            commands
-                .set_viewport(
-                    vk::Viewport::default()
-                        .width(render_target.attributes.extent.width as f32)
-                        .height(render_target.attributes.extent.height as f32),
-                )
-                .set_scissor(
-                    vk::Rect2D::default().extent(
-                        vk::Extent2D::default()
-                            .width(render_target.attributes.extent.width)
-                            .height(render_target.attributes.extent.height),
-                    ),
-                )
-                .bind_pipeline(self.pipeline)
-                .draw(0..3, 0..1);
-        }
+        commands
+            .set_viewport(
+                vk::Viewport::default()
+                    .width(render_target.attributes.extent.width as f32)
+                    .height(render_target.attributes.extent.height as f32),
+            )
+            .set_scissor(
+                vk::Rect2D::default().extent(
+                    vk::Extent2D::default()
+                        .width(render_target.attributes.extent.width)
+                        .height(render_target.attributes.extent.height),
+                ),
+            )
+            .bind_pipeline(self.pipeline)
+            .draw(0..3, 0..1);
     }
 }
 
@@ -171,9 +145,7 @@ impl Drop for Renderer {
             self.context.device.device_wait_idle().unwrap();
 
             for render_target in self.render_targets.iter_mut() {
-                self.context
-                    .destroy_image(&mut self.allocator, render_target)
-                    .unwrap();
+                render_target.destroy(&mut self.allocator).unwrap();
             }
 
             self.context.device.destroy_pipeline(self.pipeline, None);
