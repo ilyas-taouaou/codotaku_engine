@@ -40,6 +40,8 @@ pub struct PhysicalDevice {
     pub handle: vk::PhysicalDevice,
     pub properties: vk::PhysicalDeviceProperties,
     pub features: vk::PhysicalDeviceFeatures,
+    pub vulkan12_features: vk::PhysicalDeviceVulkan12Features<'static>,
+    pub vulkan13_features: vk::PhysicalDeviceVulkan13Features<'static>,
     pub memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub queue_families: Vec<QueueFamily>,
 }
@@ -129,7 +131,13 @@ impl RenderingContext {
                 .into_iter()
                 .map(|handle| {
                     let properties = instance.get_physical_device_properties(handle);
-                    let features = instance.get_physical_device_features(handle);
+                    let mut vulkan12_features = vk::PhysicalDeviceVulkan12Features::default();
+                    let mut vulkan13_features = vk::PhysicalDeviceVulkan13Features::default();
+                    let mut features = vk::PhysicalDeviceFeatures2::default()
+                        .push_next(&mut vulkan12_features)
+                        .push_next(&mut vulkan13_features);
+                    instance.get_physical_device_features2(handle, &mut features);
+                    let features = features.features;
                     let memory_properties = instance.get_physical_device_memory_properties(handle);
                     let queue_family_properties =
                         instance.get_physical_device_queue_family_properties(handle);
@@ -147,6 +155,8 @@ impl RenderingContext {
                         handle,
                         properties,
                         features,
+                        vulkan12_features,
+                        vulkan13_features,
                         memory_properties,
                         queue_families,
                     }
@@ -163,6 +173,36 @@ impl RenderingContext {
 
             let (physical_device, queue_families) =
                 (attributes.queue_family_picker)(physical_devices)?;
+
+            if physical_device.vulkan12_features.buffer_device_address == vk::FALSE {
+                return Err(anyhow::anyhow!(
+                    "Physical device does not support buffer device address"
+                ));
+            }
+
+            if physical_device.vulkan12_features.descriptor_indexing == vk::FALSE {
+                return Err(anyhow::anyhow!(
+                    "Physical device does not support descriptor indexing"
+                ));
+            }
+
+            if physical_device.vulkan12_features.scalar_block_layout == vk::FALSE {
+                return Err(anyhow::anyhow!(
+                    "Physical device does not support scalar block layout"
+                ));
+            }
+
+            if physical_device.vulkan13_features.dynamic_rendering == vk::FALSE {
+                return Err(anyhow::anyhow!(
+                    "Physical device does not support dynamic rendering"
+                ));
+            }
+
+            if physical_device.vulkan13_features.synchronization2 == vk::FALSE {
+                return Err(anyhow::anyhow!(
+                    "Physical device does not support synchronization2"
+                ));
+            }
 
             let queue_family_indices = HashSet::from([
                 queue_families.graphics,
