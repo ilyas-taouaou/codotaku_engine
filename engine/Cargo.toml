@@ -7,7 +7,7 @@ edition = "2021"
 ash = "0.38.0"
 ash-window = "0.13.0"
 bytemuck = { version = "1.19.0", features = ["derive"] }
-nalgebra = "0.33.1"
+nalgebra = { version = "0.33.1", features = ["bytemuck"] }
 tracing = "0.1.40"
 winit = "0.30.5"
 anyhow = "1.0.91"
