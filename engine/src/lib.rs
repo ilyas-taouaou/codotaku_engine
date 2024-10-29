@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 mod buffer;
 mod image;
 mod renderer;

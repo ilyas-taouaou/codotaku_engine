@@ -60,11 +60,9 @@ impl Buffer {
                 .usage
                 .contains(vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS)
             {
-                unsafe {
-                    attributes.context.device.get_buffer_device_address(
-                        &vk::BufferDeviceAddressInfo::default().buffer(handle),
-                    )
-                }
+                attributes.context.device.get_buffer_device_address(
+                    &vk::BufferDeviceAddressInfo::default().buffer(handle),
+                )
             } else {
                 Default::default()
             };
@@ -80,13 +78,11 @@ impl Buffer {
     }
 
     pub fn write<T: bytemuck::Pod>(&mut self, data: &[T], offset: vk::DeviceSize) -> Result<()> {
-        unsafe {
-            self.allocation
-                .mapped_slice_mut()
-                .context("Failed to map buffer memory")?[offset as usize..]
-                [..data.len() * size_of::<T>()]
-                .copy_from_slice(bytemuck::cast_slice(data));
-        }
+        self.allocation
+            .mapped_slice_mut()
+            .context("Failed to map buffer memory")?[offset as usize..]
+            [..data.len() * size_of::<T>()]
+            .copy_from_slice(bytemuck::cast_slice(data));
         Ok(())
     }
 

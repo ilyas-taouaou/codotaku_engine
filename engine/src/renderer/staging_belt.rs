@@ -20,7 +20,7 @@ impl StagingBelt {
         allocator: &mut Allocator,
         size: vk::DeviceSize,
     ) -> Result<Self> {
-        let mut buffer = Buffer::new(
+        let buffer = Buffer::new(
             allocator,
             BufferAttributes {
                 name: "staging_buffer".into(),

@@ -97,7 +97,7 @@ impl WindowRenderer {
 
             let commands = Commands::new(context.clone(), command_buffer)?;
 
-            let mut renderer = Renderer::new(
+            let renderer = Renderer::new(
                 context.clone(),
                 &commands,
                 RendererAttributes {

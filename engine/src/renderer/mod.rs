@@ -33,6 +33,8 @@ pub struct Renderer {
     cameras: Vec<Camera>,
     pub start_time: Instant,
     attributes: RendererAttributes,
+    instance_buffer: Buffer,
+    instances: Vec<Instance>,
 }
 
 const SHADERS_DIR: &str = "res/shaders/";
@@ -48,6 +50,28 @@ use nalgebra as na;
 struct Camera {
     view: na::Isometry3<f32>,
     projection: na::Perspective3<f32>,
+}
+
+struct Instance {
+    transform: na::Affine3<f32>,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GPUInstance {
+    transform: na::Matrix4<f32>,
+}
+
+impl Instance {
+    fn new(transform: na::Affine3<f32>) -> Self {
+        Self { transform }
+    }
+
+    fn to_gpu_instance(&self) -> GPUInstance {
+        GPUInstance {
+            transform: self.transform.to_homogeneous(),
+        }
+    }
 }
 
 impl Camera {
@@ -74,6 +98,7 @@ impl Camera {
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct PushConstants {
     vertex_buffer_address: vk::DeviceAddress,
+    instance_buffer_address: vk::DeviceAddress,
     camera_buffer_address: vk::DeviceAddress,
 }
 
@@ -153,13 +178,51 @@ impl Renderer {
             let gpu_geometry =
                 Geometry::debug_cube().create_gpu_geometry(context.clone(), &mut allocator)?;
 
+            // generate instances in a grid
+            let instances = (-10..10)
+                .flat_map(|x| {
+                    (-10..10).map(move |y| {
+                        Instance::new(na::Affine3::from_matrix_unchecked(
+                            na::Matrix4::new_translation(&na::Vector3::new(
+                                x as f32 * 3.0,
+                                0.0,
+                                y as f32 * 3.0,
+                            )),
+                        ))
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            let gpu_instances = instances
+                .iter()
+                .map(Instance::to_gpu_instance)
+                .collect::<Vec<_>>();
+
+            let instance_buffer = Buffer::new(
+                &mut allocator,
+                BufferAttributes {
+                    name: "instance_buffer".into(),
+                    context: context.clone(),
+                    size: (instances.len() * size_of::<Instance>()) as vk::DeviceSize,
+                    usage: vk::BufferUsageFlags::VERTEX_BUFFER
+                        | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS
+                        | vk::BufferUsageFlags::TRANSFER_DST,
+                    location: MemoryLocation::GpuOnly,
+                    allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                },
+            )?;
+
             let mut staging_belt = StagingBelt::new(
                 context.clone(),
                 &mut allocator,
-                gpu_geometry.geometry.size() as vk::DeviceSize,
+                gpu_geometry.geometry.size() as vk::DeviceSize + instance_buffer.attributes.size,
             )?;
 
-            staging_belt.stage_geometry(&gpu_geometry, commands)?.done();
+            staging_belt
+                .stage_geometry(&gpu_geometry, commands)?
+                .write(&gpu_instances)?
+                .copy_to(&instance_buffer, commands)
+                .done();
 
             let cameras = vec![Camera::new(
                 &na::Point3::new(0.0, 0.0, 2.0),
@@ -167,7 +230,7 @@ impl Renderer {
                 attributes.extent.width as f32 / attributes.extent.height as f32,
                 std::f32::consts::FRAC_PI_2,
                 0.1,
-                10.0,
+                1000.0,
             )];
 
             let mut camera_buffer = Buffer::new(
@@ -203,6 +266,8 @@ impl Renderer {
                 start_time,
                 frames,
                 attributes,
+                instance_buffer,
+                instances,
             })
         }
     }
@@ -232,7 +297,7 @@ impl Renderer {
             resolution.width as f32 / resolution.height as f32,
             std::f32::consts::FRAC_PI_2,
             0.1,
-            10.0,
+            1000.0,
         );
 
         Ok(())
@@ -253,7 +318,7 @@ impl Renderer {
         let camera = &mut self.cameras[0];
         let t = (Instant::now() - self.start_time).as_secs_f32();
         camera.view = na::Isometry3::look_at_rh(
-            &na::Point3::new(2.0 * t.cos(), 2.0, 2.0 * t.sin()),
+            &na::Point3::new(10.0 * t.cos(), -20.0, 10.0 * t.sin()),
             &na::Point3::new(0.0, 0.0, 0.0),
             &na::Vector3::y(),
         );
@@ -300,10 +365,14 @@ impl Renderer {
                 self.pipeline_layout,
                 PushConstants {
                     vertex_buffer_address: self.gpu_geometry.vertex_buffer.address,
+                    instance_buffer_address: self.instance_buffer.address,
                     camera_buffer_address: self.camera_buffer.address,
                 },
             )
-            .draw_indexed(0..self.gpu_geometry.geometry.indices.len() as u32, 0..1);
+            .draw_indexed(
+                0..self.gpu_geometry.geometry.indices.len() as u32,
+                0..self.instances.len() as u32,
+            );
     }
 }
 
@@ -312,6 +381,7 @@ impl Drop for Renderer {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
 
+            self.instance_buffer.destroy(&mut self.allocator).unwrap();
             self.camera_buffer.destroy(&mut self.allocator).unwrap();
             self.staging_belt.destroy(&mut self.allocator).unwrap();
             self.gpu_geometry.destroy(&mut self.allocator).unwrap();

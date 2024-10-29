@@ -163,7 +163,7 @@ impl Geometry {
         context: Arc<RenderingContext>,
         allocator: &mut Allocator,
     ) -> Result<GPUGeometry> {
-        let mut vertex_buffer = Buffer::new(
+        let vertex_buffer = Buffer::new(
             allocator,
             BufferAttributes {
                 name: "vertex_buffer".into(),
@@ -177,7 +177,7 @@ impl Geometry {
             },
         )?;
 
-        let mut index_buffer = Buffer::new(
+        let index_buffer = Buffer::new(
             allocator,
             BufferAttributes {
                 name: "index_buffer".into(),
