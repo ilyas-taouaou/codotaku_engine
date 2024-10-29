@@ -1,6 +1,8 @@
+use crate::buffer::Buffer;
 use crate::rendering_context::{Image, ImageLayoutState, RenderingContext};
 use anyhow::Result;
 use ash::vk;
+use ash::vk::DeviceSize;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -27,6 +29,57 @@ impl Commands {
             context,
             command_buffer,
         })
+    }
+
+    pub fn bind_index_buffer(&self, buffer: &Buffer) -> &Self {
+        unsafe {
+            self.context.device.cmd_bind_index_buffer(
+                self.command_buffer,
+                buffer.handle,
+                0,
+                vk::IndexType::UINT32,
+            );
+        }
+
+        self
+    }
+
+    pub fn copy_buffer(
+        &self,
+        src_buffer: &Buffer,
+        dst_buffer: &Buffer,
+        offset: DeviceSize,
+    ) -> &Self {
+        unsafe {
+            self.context.device.cmd_copy_buffer(
+                self.command_buffer,
+                src_buffer.handle,
+                dst_buffer.handle,
+                &[vk::BufferCopy::default()
+                    .size(dst_buffer.attributes.size)
+                    .src_offset(offset)],
+            );
+        }
+
+        self
+    }
+
+    pub fn set_push_constants<T: bytemuck::Pod>(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        data: T,
+    ) -> &Self {
+        unsafe {
+            self.context.device.cmd_push_constants(
+                self.command_buffer,
+                pipeline_layout,
+                vk::ShaderStageFlags::VERTEX,
+                0,
+                bytemuck::bytes_of(&data),
+            );
+        }
+
+        self
     }
 
     pub fn transition_image_layout(&self, image: &mut Image, new_state: ImageLayoutState) -> &Self {
@@ -197,6 +250,21 @@ impl Commands {
         self
     }
 
+    pub fn draw_indexed(&self, indices: Range<u32>, instances: Range<u32>) -> &Self {
+        unsafe {
+            self.context.device.cmd_draw_indexed(
+                self.command_buffer,
+                indices.end - indices.start,
+                instances.end - instances.start,
+                indices.start,
+                0,
+                instances.start,
+            );
+        }
+
+        self
+    }
+
     pub fn submit(
         &self,
         queue: vk::Queue,
@@ -209,20 +277,31 @@ impl Commands {
                 .device
                 .end_command_buffer(self.command_buffer)?;
 
-            self.context.device.queue_submit2(
-                queue,
-                &[vk::SubmitInfo2KHR::default()
-                    .command_buffer_infos(&[vk::CommandBufferSubmitInfoKHR::default()
-                        .command_buffer(self.command_buffer)
-                        .device_mask(1)])
-                    .wait_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
-                        .semaphore(wait_semaphore.0)
-                        .stage_mask(wait_semaphore.1)])
-                    .signal_semaphore_infos(&[vk::SemaphoreSubmitInfo::default()
-                        .semaphore(signal_semaphore.0)
-                        .stage_mask(signal_semaphore.1)])],
-                fence,
-            )?;
+            let command_buffer_submit_infos =
+                &[vk::CommandBufferSubmitInfoKHR::default().command_buffer(self.command_buffer)];
+
+            let mut submit_info =
+                vk::SubmitInfo2KHR::default().command_buffer_infos(command_buffer_submit_infos);
+
+            let wait_semaphore_submit_infos = &[vk::SemaphoreSubmitInfo::default()
+                .semaphore(wait_semaphore.0)
+                .stage_mask(wait_semaphore.1)];
+
+            let signal_semaphore_submit_infos = &[vk::SemaphoreSubmitInfo::default()
+                .semaphore(signal_semaphore.0)
+                .stage_mask(signal_semaphore.1)];
+
+            if wait_semaphore.0 != vk::Semaphore::null() {
+                submit_info = submit_info.wait_semaphore_infos(wait_semaphore_submit_infos);
+            }
+
+            if signal_semaphore.0 != vk::Semaphore::null() {
+                submit_info = submit_info.signal_semaphore_infos(signal_semaphore_submit_infos)
+            }
+
+            self.context
+                .device
+                .queue_submit2(queue, &[submit_info], fence)?;
             Ok(())
         }
     }

@@ -78,12 +78,32 @@ impl WindowRenderer {
                 });
             }
 
-            let renderer = Renderer::new(
+            let command_buffer = frames[0].command_buffer;
+
+            let commands = Commands::new(context.clone(), command_buffer)?;
+
+            let mut renderer = Renderer::new(
                 context.clone(),
                 swapchain.extent,
                 format,
                 in_flight_frames_count,
+                &commands,
             )?;
+
+            let fence = context
+                .device
+                .create_fence(&vk::FenceCreateInfo::default(), None)?;
+
+            commands.submit(
+                context.queues[context.queue_families.graphics as usize],
+                (vk::Semaphore::null(), vk::PipelineStageFlags2::empty()),
+                (vk::Semaphore::null(), vk::PipelineStageFlags2::empty()),
+                fence,
+            )?;
+
+            context.device.wait_for_fences(&[fence], true, u64::MAX)?;
+
+            context.device.destroy_fence(fence, None);
 
             Ok(Self {
                 in_flight_frames_count,

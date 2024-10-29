@@ -4,6 +4,8 @@
 - The Vulkan instance is created with the required extensions for the dynamic rendering and buffer device address features.
  */
 
+pub const IS_DEBUG: bool = false;
+
 pub use crate::image::{Image, ImageAttributes, ImageLayoutState};
 use anyhow::Result;
 use ash::vk;
@@ -187,7 +189,9 @@ impl RenderingContext {
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan12Features::default()
                             .buffer_device_address(true)
-                            .descriptor_indexing(true),
+                            .buffer_device_address_capture_replay(IS_DEBUG)
+                            .descriptor_indexing(true)
+                            .scalar_block_layout(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan13Features::default()

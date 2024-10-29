@@ -1,3 +1,4 @@
+mod buffer;
 mod image;
 mod renderer;
 mod rendering_context;

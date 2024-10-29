@@ -272,6 +272,7 @@ name = "codotaku_engine"
 version = "0.1.0"
 dependencies = [
  "engine",
+ "nalgebra",
  "tracing-subscriber",
 ]
 
@@ -611,6 +612,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3bf139e93ad757869338ad85239cb1d6c067b23b94e5846e637ca6328ee4be60"
 dependencies = [
  "approx",
+ "bytemuck",
  "matrixmultiply",
  "nalgebra-macros",
  "num-complex",

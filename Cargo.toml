@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 tracing-subscriber = "0.3.18"
 engine = { path = "./engine" }
+nalgebra = { version = "0.33.1", features = ["bytemuck"] }
