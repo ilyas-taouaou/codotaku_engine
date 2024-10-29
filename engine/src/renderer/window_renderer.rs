@@ -17,27 +17,40 @@ struct Frame {
     in_flight_fence: vk::Fence,
 }
 
+#[derive(Clone)]
+pub struct WindowRendererAttributes {
+    pub format: vk::Format,
+    pub clear_color: vk::ClearColorValue,
+    pub ssaa: f32,
+    pub ssaa_filter: vk::Filter,
+    pub in_flight_frames_count: usize,
+}
+
 pub struct WindowRenderer {
-    in_flight_frames_count: usize,
     frame_index: usize,
     frames: Vec<Frame>,
     command_pool: vk::CommandPool,
     swapchain: Swapchain,
     context: Arc<RenderingContext>,
 
-    clear_color: vk::ClearColorValue,
+    attributes: WindowRendererAttributes,
 
     pub renderer: Renderer,
     pub window: Arc<Window>,
+}
+
+fn scale_extent(extent: vk::Extent2D, scale: f32) -> vk::Extent2D {
+    vk::Extent2D {
+        width: (extent.width as f32 * scale) as u32,
+        height: (extent.height as f32 * scale) as u32,
+    }
 }
 
 impl WindowRenderer {
     pub fn new(
         context: Arc<RenderingContext>,
         window: Arc<Window>,
-        in_flight_frames_count: usize,
-        format: vk::Format,
-        clear_color: vk::ClearColorValue,
+        attributes: WindowRendererAttributes,
     ) -> Result<Self> {
         let mut swapchain = Swapchain::new(context.clone(), window.clone())?;
         swapchain.resize()?;
@@ -54,7 +67,7 @@ impl WindowRenderer {
                 &vk::CommandBufferAllocateInfo::default()
                     .command_pool(command_pool)
                     .level(vk::CommandBufferLevel::PRIMARY)
-                    .command_buffer_count(in_flight_frames_count as u32),
+                    .command_buffer_count(attributes.in_flight_frames_count as u32),
             )?;
 
             let mut frames = Vec::with_capacity(command_buffers.len());
@@ -85,9 +98,9 @@ impl WindowRenderer {
 
             let mut renderer = Renderer::new(
                 context.clone(),
-                swapchain.extent,
-                format,
-                in_flight_frames_count,
+                scale_extent(swapchain.extent, attributes.ssaa),
+                attributes.format,
+                attributes.in_flight_frames_count,
                 &commands,
             )?;
 
@@ -107,15 +120,14 @@ impl WindowRenderer {
             context.device.destroy_fence(fence, None);
 
             Ok(Self {
-                in_flight_frames_count,
                 frame_index: 0,
                 frames,
                 command_pool,
                 swapchain,
                 context,
-                clear_color,
                 renderer,
                 window,
+                attributes,
             })
         }
     }
@@ -139,7 +151,8 @@ impl WindowRenderer {
                 if swapchain_extent.width == 0 || swapchain_extent.height == 0 {
                     return Ok(());
                 }
-                self.renderer.resize(swapchain_extent)?;
+                self.renderer
+                    .resize(scale_extent(swapchain_extent, self.attributes.ssaa))?;
             }
 
             let swapchain_extent = self.swapchain.extent;
@@ -175,9 +188,9 @@ impl WindowRenderer {
             let commands = Commands::new(self.context.clone(), command_buffer)?;
             let render_target =
                 self.renderer
-                    .render(&commands, self.clear_color, self.frame_index)?;
+                    .render(&commands, self.attributes.clear_color, self.frame_index)?;
             commands
-                .blit_full_image(render_target, swapchain_image)
+                .blit_full_image(render_target, swapchain_image, self.attributes.ssaa_filter)
                 .transition_image_layout(swapchain_image, ImageLayoutState::present())
                 .submit(
                     graphics_queue,
@@ -195,7 +208,7 @@ impl WindowRenderer {
             self.swapchain
                 .present(image_index, frame.render_finished_semaphore)?;
 
-            self.frame_index = (self.frame_index + 1) % self.in_flight_frames_count;
+            self.frame_index = (self.frame_index + 1) % self.attributes.in_flight_frames_count;
             Ok(())
         }
     }

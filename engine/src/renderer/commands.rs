@@ -125,6 +125,7 @@ impl Commands {
         dst_image: &mut Image,
         src_offsets: [vk::Offset3D; 2],
         dst_offsets: [vk::Offset3D; 2],
+        filter: vk::Filter,
     ) -> &Self {
         self.ensure_image_layout(src_image, ImageLayoutState::transfer_source())
             .ensure_image_layout(dst_image, ImageLayoutState::transfer_destination());
@@ -141,7 +142,7 @@ impl Commands {
                     .src_offsets(src_offsets)
                     .dst_subresource(dst_image.subresource_layers())
                     .dst_offsets(dst_offsets)],
-                vk::Filter::NEAREST,
+                filter,
             );
         }
 
@@ -154,6 +155,7 @@ impl Commands {
         dst_image: &mut Image,
         src_extent: vk::Extent3D,
         dst_extent: vk::Extent3D,
+        filter: vk::Filter,
     ) -> &Self {
         self.blit_image(
             src_image,
@@ -174,15 +176,22 @@ impl Commands {
                     z: dst_extent.depth as i32,
                 },
             ],
+            filter,
         )
     }
 
-    pub fn blit_full_image(&self, src_image: &mut Image, dst_image: &mut Image) -> &Self {
+    pub fn blit_full_image(
+        &self,
+        src_image: &mut Image,
+        dst_image: &mut Image,
+        filter: vk::Filter,
+    ) -> &Self {
         self.blit_image_extent(
             src_image,
             dst_image,
             src_image.attributes.extent,
             dst_image.attributes.extent,
+            filter,
         )
     }
 

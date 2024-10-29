@@ -1,6 +1,6 @@
-use engine::winit;
 use engine::winit::window::WindowAttributes;
 use ::engine::Engine;
+use engine::{vk, winit, WindowRendererAttributes};
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
@@ -13,14 +13,49 @@ pub struct App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.engine = Some(Engine::new(event_loop).unwrap());
+        let primary_window_attributes = WindowAttributes::default().with_title("Primary window");
+        let primary_window_renderer_attributes = WindowRendererAttributes {
+            format: vk::Format::R16G16B16A16_SFLOAT,
+            clear_color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+            ssaa: 1.0,
+            ssaa_filter: vk::Filter::NEAREST,
+            in_flight_frames_count: 2,
+        };
+
+        let secondary_window_attributes =
+            WindowAttributes::default().with_title("Secondary window");
+        let secondary_window_renderer_attributes = WindowRendererAttributes {
+            format: vk::Format::R16G16B16A16_SFLOAT,
+            clear_color: vk::ClearColorValue {
+                float32: [0.0, 0.0, 0.0, 1.0],
+            },
+            ssaa: 0.1,
+            ssaa_filter: vk::Filter::NEAREST,
+            in_flight_frames_count: 2,
+        };
+
+        let secondary_window_count = 3;
+
+        self.engine = Some(
+            Engine::new(
+                event_loop,
+                primary_window_attributes,
+                primary_window_renderer_attributes,
+            )
+            .unwrap(),
+        );
         if let Some(engine) = self.engine.as_mut() {
-            _ = engine
-                .create_window(
-                    event_loop,
-                    WindowAttributes::default().with_title("Secondary window"),
-                )
-                .unwrap();
+            for _ in 0..secondary_window_count {
+                _ = engine
+                    .create_window(
+                        event_loop,
+                        secondary_window_attributes.clone(),
+                        secondary_window_renderer_attributes.clone(),
+                    )
+                    .unwrap();
+            }
         }
     }
 

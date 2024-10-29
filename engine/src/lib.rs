@@ -5,7 +5,6 @@ mod rendering_context;
 
 use crate::rendering_context::{queue_family_picker, RenderingContext, RenderingContextAttributes};
 use anyhow::Result;
-use ash::vk;
 use renderer::window_renderer::WindowRenderer;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -13,7 +12,9 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
+pub use crate::renderer::window_renderer::WindowRendererAttributes;
 pub use anyhow;
+pub use ash::vk;
 pub use winit;
 
 pub struct Engine {
@@ -24,8 +25,12 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(event_loop: &ActiveEventLoop) -> Result<Self> {
-        let primary_window = Arc::new(event_loop.create_window(Default::default())?);
+    pub fn new(
+        event_loop: &ActiveEventLoop,
+        primary_window_attributes: WindowAttributes,
+        primary_renderer_attributes: WindowRendererAttributes,
+    ) -> Result<Self> {
+        let primary_window = Arc::new(event_loop.create_window(primary_window_attributes)?);
         let primary_window_id = primary_window.id();
 
         let rendering_context = Arc::new(RenderingContext::new(RenderingContextAttributes {
@@ -41,11 +46,7 @@ impl Engine {
                 let renderer = WindowRenderer::new(
                     rendering_context.clone(),
                     window.clone(),
-                    2,
-                    vk::Format::R16G16B16A16_SFLOAT,
-                    vk::ClearColorValue {
-                        float32: [0.0, 0.0, 0.0, 1.0],
-                    },
+                    primary_renderer_attributes.clone(),
                 )
                 .unwrap();
                 (*id, renderer)
@@ -98,6 +99,7 @@ impl Engine {
         &mut self,
         event_loop: &ActiveEventLoop,
         attributes: WindowAttributes,
+        renderer_attributes: WindowRendererAttributes,
     ) -> Result<WindowId> {
         let window = Arc::new(event_loop.create_window(attributes)?);
         let window_id = window.id();
@@ -106,11 +108,7 @@ impl Engine {
         let renderer = WindowRenderer::new(
             self.rendering_context.clone(),
             window.clone(),
-            2,
-            vk::Format::R16G16B16A16_SFLOAT,
-            vk::ClearColorValue {
-                float32: [0.0, 0.0, 0.0, 1.0],
-            },
+            renderer_attributes,
         )?;
         self.renderers.insert(window_id, renderer);
 

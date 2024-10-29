@@ -8,7 +8,7 @@ mod app;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::fmt()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::DEBUG)
         .init();
 
     let mut app = App::default();

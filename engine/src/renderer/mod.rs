@@ -47,7 +47,6 @@ struct Vertex {
 struct PushConstants {
     vertex_buffer_address: vk::DeviceAddress,
 }
-
 impl Renderer {
     pub fn new(
         context: Arc<RenderingContext>,
