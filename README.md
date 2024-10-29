@@ -3,7 +3,12 @@ A game engine made using Rust programming language and modern Vulkan 1.3 graphic
 Focusing on performance, cutting edge technology and developer experience more than compatibility.
 
 ## Compatibility
-Windows or Linux with Vulkan API 1.3 capable GPU driver.
-
+Windows or Linux with Vulkan API 1.3 capable GPU driver with the following features:
+- dynamic_rendering
+- synchronization2
+- buffer_device_address
+- buffer_device_address_capture_replay (debug only)
+- descriptor_indexing
+- scalar_block_layout
 ## Contributions
 Contributions are welcome especially bug fixes, will reviewed in the next live streams.
