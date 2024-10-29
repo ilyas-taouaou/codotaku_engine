@@ -171,6 +171,14 @@ impl Image {
         }
         Ok(())
     }
+
+    pub fn subresource_layers(&self) -> vk::ImageSubresourceLayers {
+        vk::ImageSubresourceLayers::default()
+            .aspect_mask(self.attributes.subresource_range.aspect_mask)
+            .mip_level(self.attributes.subresource_range.base_mip_level)
+            .base_array_layer(self.attributes.subresource_range.base_array_layer)
+            .layer_count(self.attributes.subresource_range.layer_count)
+    }
 }
 
 #[derive(Clone, Copy)]

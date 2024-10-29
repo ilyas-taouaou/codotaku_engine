@@ -152,12 +152,7 @@ impl WindowRenderer {
             commands
                 .transition_image_layout(swapchain_image, ImageLayoutState::transfer_destination())
                 .transition_image_layout(render_target, ImageLayoutState::transfer_source())
-                .blit_image(
-                    render_target,
-                    swapchain_image,
-                    render_target.attributes.extent,
-                    swapchain_extent.into(),
-                )
+                .blit_full_image(render_target, swapchain_image)
                 .transition_image_layout(swapchain_image, ImageLayoutState::present())
                 .submit(
                     graphics_queue,

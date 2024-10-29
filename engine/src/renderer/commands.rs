@@ -29,35 +29,8 @@ impl Commands {
         })
     }
 
-    pub fn clear_image(&self, image: Image, clear_color: [f32; 4]) -> &Self {
-        unsafe {
-            self.context.device.cmd_clear_color_image(
-                self.command_buffer,
-                image.handle,
-                vk::ImageLayout::TRANSFER_DST_OPTIMAL,
-                &vk::ClearColorValue {
-                    float32: clear_color,
-                },
-                &[vk::ImageSubresourceRange::default()
-                    .aspect_mask(vk::ImageAspectFlags::COLOR)
-                    .base_mip_level(0)
-                    .level_count(1)
-                    .base_array_layer(0)
-                    .layer_count(1)],
-            )
-        }
-        self
-    }
-
     pub fn transition_image_layout(&self, image: &mut Image, new_state: ImageLayoutState) -> &Self {
         unsafe {
-            let aspect_mask =
-                if new_state.layout == vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL {
-                    vk::ImageAspectFlags::DEPTH | vk::ImageAspectFlags::STENCIL
-                } else {
-                    vk::ImageAspectFlags::COLOR
-                };
-
             let old_state = image.layout;
 
             self.context.device.cmd_pipeline_barrier2(
@@ -73,14 +46,7 @@ impl Commands {
                         .src_queue_family_index(old_state.queue_family)
                         .dst_queue_family_index(new_state.queue_family)
                         .image(image.handle)
-                        .subresource_range(
-                            vk::ImageSubresourceRange::default()
-                                .aspect_mask(aspect_mask)
-                                .base_mip_level(0)
-                                .level_count(1)
-                                .base_array_layer(0)
-                                .layer_count(1),
-                        ),
+                        .subresource_range(image.attributes.subresource_range),
                 ]),
             );
 
@@ -93,13 +59,9 @@ impl Commands {
         &self,
         src_image: &Image,
         dst_image: &Image,
-        src_extent: vk::Extent3D,
-        dst_extent: vk::Extent3D,
+        src_offsets: [vk::Offset3D; 2],
+        dst_offsets: [vk::Offset3D; 2],
     ) -> &Self {
-        let subresource = vk::ImageSubresourceLayers::default()
-            .aspect_mask(vk::ImageAspectFlags::COLOR)
-            .layer_count(1);
-
         unsafe {
             self.context.device.cmd_blit_image(
                 self.command_buffer,
@@ -108,24 +70,10 @@ impl Commands {
                 dst_image.handle,
                 dst_image.layout.layout,
                 &[vk::ImageBlit::default()
-                    .src_subresource(subresource)
-                    .src_offsets([
-                        vk::Offset3D::default(),
-                        vk::Offset3D {
-                            x: src_extent.width as i32,
-                            y: src_extent.height as i32,
-                            z: src_extent.depth as i32,
-                        },
-                    ])
-                    .dst_subresource(subresource)
-                    .dst_offsets([
-                        vk::Offset3D::default(),
-                        vk::Offset3D {
-                            x: dst_extent.width as i32,
-                            y: dst_extent.height as i32,
-                            z: 1,
-                        },
-                    ])],
+                    .src_subresource(src_image.subresource_layers())
+                    .src_offsets(src_offsets)
+                    .dst_subresource(dst_image.subresource_layers())
+                    .dst_offsets(dst_offsets)],
                 vk::Filter::NEAREST,
             );
         }
@@ -133,9 +81,47 @@ impl Commands {
         self
     }
 
+    pub fn blit_image_extent(
+        &self,
+        src_image: &Image,
+        dst_image: &Image,
+        src_extent: vk::Extent3D,
+        dst_extent: vk::Extent3D,
+    ) -> &Self {
+        self.blit_image(
+            src_image,
+            dst_image,
+            [
+                vk::Offset3D::default(),
+                vk::Offset3D {
+                    x: src_extent.width as i32,
+                    y: src_extent.height as i32,
+                    z: src_extent.depth as i32,
+                },
+            ],
+            [
+                vk::Offset3D::default(),
+                vk::Offset3D {
+                    x: dst_extent.width as i32,
+                    y: dst_extent.height as i32,
+                    z: dst_extent.depth as i32,
+                },
+            ],
+        )
+    }
+
+    pub fn blit_full_image(&self, src_image: &Image, dst_image: &Image) -> &Self {
+        self.blit_image_extent(
+            src_image,
+            dst_image,
+            src_image.attributes.extent,
+            dst_image.attributes.extent,
+        )
+    }
+
     pub fn begin_rendering(
         &self,
-        view: vk::ImageView,
+        image: &Image,
         clear_color: vk::ClearColorValue,
         render_area: vk::Rect2D,
     ) -> &Self {
@@ -145,8 +131,8 @@ impl Commands {
                 &vk::RenderingInfo::default()
                     .layer_count(1)
                     .color_attachments(&[vk::RenderingAttachmentInfo::default()
-                        .image_view(view)
-                        .image_layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+                        .image_view(image.view)
+                        .image_layout(image.layout.layout)
                         .clear_value(vk::ClearValue { color: clear_color })
                         .load_op(vk::AttachmentLoadOp::CLEAR)
                         .store_op(vk::AttachmentStoreOp::STORE)])

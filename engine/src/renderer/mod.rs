@@ -104,7 +104,7 @@ impl Renderer {
         commands
             .transition_image_layout(render_target, ImageLayoutState::color_attachment())
             .begin_rendering(
-                render_target.view,
+                render_target,
                 clear_color,
                 vk::Rect2D::default().extent(
                     vk::Extent2D::default()
