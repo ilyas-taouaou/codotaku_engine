@@ -229,7 +229,13 @@ impl RenderingContext {
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan12Features::default()
                             .buffer_device_address(true)
-                            .buffer_device_address_capture_replay(IS_DEBUG)
+                            .buffer_device_address_capture_replay(
+                                IS_DEBUG
+                                    && (physical_device
+                                        .vulkan12_features
+                                        .buffer_device_address_capture_replay
+                                        == vk::TRUE),
+                            )
                             .descriptor_indexing(true)
                             .scalar_block_layout(true),
                     )
