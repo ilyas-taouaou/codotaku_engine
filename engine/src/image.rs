@@ -135,6 +135,32 @@ impl Image {
         )
     }
 
+    pub fn new_depth_buffer(
+        context: Arc<RenderingContext>,
+        allocator: &mut Allocator,
+        name: &str,
+        extent: vk::Extent2D,
+        format: vk::Format,
+    ) -> Result<Image> {
+        Image::new(
+            context,
+            allocator,
+            name,
+            ImageAttributes {
+                extent: extent.into(),
+                format,
+                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT,
+                location: MemoryLocation::GpuOnly,
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                subresource_range: vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                    .level_count(1)
+                    .layer_count(1),
+            },
+        )
+    }
+
     pub fn wrap(
         context: Arc<RenderingContext>,
         handle: vk::Image,
@@ -204,6 +230,15 @@ impl ImageLayoutState {
             access: vk::AccessFlags2::COLOR_ATTACHMENT_WRITE,
             layout: vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL,
             stage: vk::PipelineStageFlags2::COLOR_ATTACHMENT_OUTPUT,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+
+    pub fn depth_stencil_attachment() -> Self {
+        Self {
+            access: vk::AccessFlags2::DEPTH_STENCIL_ATTACHMENT_WRITE,
+            layout: vk::ImageLayout::DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+            stage: vk::PipelineStageFlags2::EARLY_FRAGMENT_TESTS,
             queue_family: QUEUE_FAMILY_IGNORED,
         }
     }

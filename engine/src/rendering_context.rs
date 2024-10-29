@@ -4,7 +4,7 @@
 - The Vulkan instance is created with the required extensions for the dynamic rendering and buffer device address features.
  */
 
-pub const IS_DEBUG: bool = false;
+pub const IS_DEBUG: bool = true;
 
 pub use crate::image::{Image, ImageAttributes, ImageLayoutState};
 use anyhow::Result;
@@ -272,6 +272,7 @@ impl RenderingContext {
         fragment_shader: vk::ShaderModule,
         image_extent: vk::Extent2D,
         image_format: vk::Format,
+        depth_format: vk::Format,
         pipeline_layout: vk::PipelineLayout,
         pipeline_cache: vk::PipelineCache,
     ) -> Result<vk::Pipeline> {
@@ -331,9 +332,16 @@ impl RenderingContext {
                             ]),
                         )
                         .layout(pipeline_layout)
+                        .depth_stencil_state(
+                            &vk::PipelineDepthStencilStateCreateInfo::default()
+                                .depth_test_enable(true)
+                                .depth_write_enable(true)
+                                .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL),
+                        )
                         .push_next(
                             &mut vk::PipelineRenderingCreateInfo::default()
-                                .color_attachment_formats(&[image_format]),
+                                .color_attachment_formats(&[image_format])
+                                .depth_attachment_format(depth_format),
                         )],
                     None,
                 )

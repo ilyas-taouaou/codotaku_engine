@@ -40,13 +40,17 @@ pub struct Circle {
     pub segments: usize,
 }
 
+pub struct Cube {
+    pub size: f32,
+}
+
 impl Geometry {
-    pub fn new_circle(circle: Circle) -> Self {
+    pub fn new_circle(circle: Circle, color: na::Vector3<f32>) -> Self {
         let Circle { radius, segments } = circle;
         let mut vertices = Vec::with_capacity(segments + 1);
         vertices.push(Vertex {
             position: na::Vector3::new(0.0, 0.0, 0.0),
-            color: na::Vector3::new(1.0, 1.0, 1.0),
+            color,
         });
         for i in 0..segments {
             let angle = 2.0 * std::f32::consts::PI * (i as f32) / (segments as f32);
@@ -61,6 +65,95 @@ impl Geometry {
             indices.push(i as u32 + 1);
             indices.push(((i + 1) % segments) as u32 + 1);
         }
+
+        Self { vertices, indices }
+    }
+
+    pub fn new_cube(cube: Cube, color: na::Vector3<f32>) -> Self {
+        let Cube { size: half_size } = cube;
+        let vertices = vec![
+            Vertex {
+                position: na::Vector3::new(-half_size, -half_size, -half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(half_size, -half_size, -half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(half_size, half_size, -half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(-half_size, half_size, -half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(-half_size, -half_size, half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(half_size, -half_size, half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(half_size, half_size, half_size),
+                color,
+            },
+            Vertex {
+                position: na::Vector3::new(-half_size, half_size, half_size),
+                color,
+            },
+        ];
+
+        let indices = vec![
+            0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7, 4, 3, 2, 6, 6, 7,
+            3, 0, 4, 5, 5, 1, 0,
+        ];
+
+        Self { vertices, indices }
+    }
+
+    pub fn debug_cube() -> Self {
+        let vertices = vec![
+            Vertex {
+                position: na::Vector3::new(-1.0, -1.0, -1.0),
+                color: na::Vector3::new(1.0, 0.0, 0.0),
+            },
+            Vertex {
+                position: na::Vector3::new(1.0, -1.0, -1.0),
+                color: na::Vector3::new(0.0, 1.0, 0.0),
+            },
+            Vertex {
+                position: na::Vector3::new(1.0, 1.0, -1.0),
+                color: na::Vector3::new(0.0, 0.0, 1.0),
+            },
+            Vertex {
+                position: na::Vector3::new(-1.0, 1.0, -1.0),
+                color: na::Vector3::new(1.0, 1.0, 0.0),
+            },
+            Vertex {
+                position: na::Vector3::new(-1.0, -1.0, 1.0),
+                color: na::Vector3::new(0.0, 1.0, 1.0),
+            },
+            Vertex {
+                position: na::Vector3::new(1.0, -1.0, 1.0),
+                color: na::Vector3::new(1.0, 0.0, 1.0),
+            },
+            Vertex {
+                position: na::Vector3::new(1.0, 1.0, 1.0),
+                color: na::Vector3::new(1.0, 1.0, 1.0),
+            },
+            Vertex {
+                position: na::Vector3::new(-1.0, 1.0, 1.0),
+                color: na::Vector3::new(0.0, 0.0, 0.0),
+            },
+        ];
+
+        let indices = vec![
+            0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7, 4, 3, 2, 6, 6, 7,
+            3, 0, 4, 5, 5, 1, 0,
+        ];
 
         Self { vertices, indices }
     }

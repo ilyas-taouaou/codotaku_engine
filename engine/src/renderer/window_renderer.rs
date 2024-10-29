@@ -1,5 +1,5 @@
 use crate::renderer::swapchain::Swapchain;
-use crate::renderer::Renderer;
+use crate::renderer::{Renderer, RendererAttributes};
 use crate::rendering_context::{ImageLayoutState, RenderingContext};
 use ash::vk;
 use ash::vk::CommandBuffer;
@@ -20,6 +20,7 @@ struct Frame {
 #[derive(Clone)]
 pub struct WindowRendererAttributes {
     pub format: vk::Format,
+    pub depth_format: vk::Format,
     pub clear_color: vk::ClearColorValue,
     pub ssaa: f32,
     pub ssaa_filter: vk::Filter,
@@ -98,10 +99,13 @@ impl WindowRenderer {
 
             let mut renderer = Renderer::new(
                 context.clone(),
-                scale_extent(swapchain.extent, attributes.ssaa),
-                attributes.format,
-                attributes.in_flight_frames_count,
                 &commands,
+                RendererAttributes {
+                    extent: scale_extent(swapchain.extent, attributes.ssaa),
+                    format: attributes.format,
+                    depth_format: attributes.depth_format,
+                    buffering: attributes.in_flight_frames_count,
+                },
             )?;
 
             let fence = context
@@ -110,8 +114,8 @@ impl WindowRenderer {
 
             commands.submit(
                 context.queues[context.queue_families.graphics as usize],
-                (vk::Semaphore::null(), vk::PipelineStageFlags2::empty()),
-                (vk::Semaphore::null(), vk::PipelineStageFlags2::empty()),
+                Default::default(),
+                Default::default(),
                 fence,
             )?;
 
