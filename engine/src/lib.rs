@@ -9,20 +9,24 @@ use anyhow::Result;
 use renderer::window_renderer::WindowRenderer;
 use std::collections::HashMap;
 use std::sync::Arc;
-use winit::event::WindowEvent;
+use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowAttributes, WindowId};
 
 pub use crate::renderer::window_renderer::WindowRendererAttributes;
 pub use anyhow;
 pub use ash::vk;
+use renderdoc::RenderDoc;
+use tracing::{error, info};
 pub use winit;
+use winit::keyboard::{Key, NamedKey};
 
 pub struct Engine {
     windows: HashMap<WindowId, Arc<Window>>,
     renderers: HashMap<WindowId, WindowRenderer>,
     primary_window_id: WindowId,
     rendering_context: Arc<RenderingContext>,
+    renderdoc: Option<RenderDoc<renderdoc::V100>>,
 }
 
 impl Engine {
@@ -31,6 +35,11 @@ impl Engine {
         primary_window_attributes: WindowAttributes,
         primary_renderer_attributes: WindowRendererAttributes,
     ) -> Result<Self> {
+        let mut renderdoc = RenderDoc::new().ok();
+        if renderdoc.is_some() {
+            info!("RenderDoc is available");
+        }
+
         let primary_window = Arc::new(event_loop.create_window(primary_window_attributes)?);
         let primary_window_id = primary_window.id();
 
@@ -59,6 +68,7 @@ impl Engine {
             windows,
             primary_window_id,
             rendering_context,
+            renderdoc,
         })
     }
 
@@ -92,6 +102,16 @@ impl Engine {
                     renderer.render().unwrap();
                 }
             }
+            WindowEvent::KeyboardInput { event, .. } => match event.logical_key {
+                Key::Named(NamedKey::F1) => {
+                    if event.state == ElementState::Pressed {
+                        if let Some(renderdoc) = &mut self.renderdoc {
+                            renderdoc.trigger_capture();
+                        }
+                    }
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
