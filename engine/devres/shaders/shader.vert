@@ -12,5 +12,7 @@ void main() {
     mat4 mvp = camera.projection * camera.view * instance.model;
     gl_Position = mvp * vec4(vertex.position, 1.0);
     fragPosition = vec3(instance.model * vec4(vertex.position, 1.0));
-    fragNormal = vertex.normal;
+
+    mat3 normalMatrix = transpose(inverse(mat3(instance.model)));
+    fragNormal = normalize(normalMatrix * vertex.normal);
 }

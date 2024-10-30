@@ -61,6 +61,7 @@ struct Camera {
 struct GPUCamera {
     view: na::Matrix4<f32>,
     projection: na::Matrix4<f32>,
+    position: na::Vector3<f32>,
 }
 
 struct Instance {
@@ -118,6 +119,7 @@ impl Camera {
         GPUCamera {
             view: self.view.to_homogeneous(),
             projection: self.projection.to_homogeneous(),
+            position: self.view.translation.vector,
         }
     }
 }
