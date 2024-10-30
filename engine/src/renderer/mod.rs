@@ -56,6 +56,13 @@ struct Camera {
     projection: na::Perspective3<f32>,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct GPUCamera {
+    view: na::Matrix4<f32>,
+    projection: na::Matrix4<f32>,
+}
+
 struct Instance {
     transform: na::Affine3<f32>,
 }
@@ -95,6 +102,13 @@ impl Camera {
 
     fn view_projection(&self) -> na::Matrix4<f32> {
         self.projection.to_homogeneous() * self.view.to_homogeneous()
+    }
+
+    fn to_gpu_camera(&self) -> GPUCamera {
+        GPUCamera {
+            view: self.view.to_homogeneous(),
+            projection: self.projection.to_homogeneous(),
+        }
     }
 }
 
@@ -161,7 +175,7 @@ impl Renderer {
             let pipeline_layout = context.device.create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&[
                     vk::PushConstantRange::default()
-                        .stage_flags(vk::ShaderStageFlags::VERTEX)
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
                         .offset(0)
                         .size(size_of::<PushConstants>() as u32),
                 ]),
@@ -239,23 +253,23 @@ impl Renderer {
                 1000.0,
             )];
 
+            let gpu_cameras = cameras
+                .iter()
+                .map(Camera::to_gpu_camera)
+                .collect::<Vec<_>>();
+
             let mut camera_buffer = Buffer::new(
                 &mut allocator,
                 BufferAttributes {
                     name: "camera_buffer".into(),
                     context: context.clone(),
-                    size: (cameras.len() * size_of::<Camera>()) as vk::DeviceSize,
+                    size: (cameras.len() * size_of::<GPUCamera>()) as vk::DeviceSize,
                     usage: vk::BufferUsageFlags::UNIFORM_BUFFER
                         | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                     location: MemoryLocation::CpuToGpu,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
                 },
             )?;
-
-            let gpu_cameras = cameras
-                .iter()
-                .map(Camera::view_projection)
-                .collect::<Vec<_>>();
             camera_buffer.write(&gpu_cameras, 0)?;
 
             let start_time = Instant::now();
@@ -332,7 +346,7 @@ impl Renderer {
         let gpu_cameras = self
             .cameras
             .iter()
-            .map(Camera::view_projection)
+            .map(Camera::to_gpu_camera)
             .collect::<Vec<_>>();
         self.camera_buffer.write(&gpu_cameras, 0)?;
 

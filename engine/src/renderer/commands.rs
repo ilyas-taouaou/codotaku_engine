@@ -74,7 +74,7 @@ impl Commands {
             self.context.device.cmd_push_constants(
                 self.command_buffer,
                 pipeline_layout,
-                vk::ShaderStageFlags::VERTEX,
+                vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT,
                 0,
                 bytemuck::bytes_of(&data),
             );
