@@ -12,3 +12,7 @@ tracing = "0.1.40"
 winit = "0.30.5"
 anyhow = "1.0.91"
 gpu-allocator = { version = "0.27.0", default-features = false, features = ["vulkan"] }
+
+[build-dependencies]
+shaderc = "0.8.3"
+anyhow = "1.0.91"

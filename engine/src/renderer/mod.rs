@@ -13,6 +13,7 @@ use ash::vk;
 use geometry::Geometry;
 use gpu_allocator::vulkan::{AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -37,10 +38,13 @@ pub struct Renderer {
     instances: Vec<Instance>,
 }
 
-const SHADERS_DIR: &str = "res/shaders/";
+const SHADERS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/res/shaders/");
 
-fn load_shader_module(context: &RenderingContext, path: &str) -> Result<vk::ShaderModule> {
-    let code = std::fs::read(format!("{}{}", SHADERS_DIR, path))?;
+fn load_shader_module(
+    context: &RenderingContext,
+    path: impl AsRef<Path>,
+) -> Result<vk::ShaderModule> {
+    let code = std::fs::read(path)?;
     context.create_shader_module(&code)
 }
 
@@ -115,8 +119,10 @@ impl Renderer {
         commands: &Commands,
         attributes: RendererAttributes,
     ) -> Result<Self> {
-        let vertex_shader = load_shader_module(context.as_ref(), "vert.spv")?;
-        let fragment_shader = load_shader_module(context.as_ref(), "frag.spv")?;
+        let vertex_shader =
+            load_shader_module(context.as_ref(), SHADERS_DIR.to_owned() + "shader.vert.spv")?;
+        let fragment_shader =
+            load_shader_module(context.as_ref(), SHADERS_DIR.to_owned() + "shader.frag.spv")?;
 
         let mut allocator = context.create_allocator(Default::default(), Default::default())?;
 
