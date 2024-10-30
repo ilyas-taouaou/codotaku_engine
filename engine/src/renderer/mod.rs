@@ -148,6 +148,7 @@ impl Renderer {
                     "render_target",
                     attributes.extent,
                     attributes.format,
+                    1.0,
                 )
             })
             .collect::<Result<Vec<_>>>()?;
@@ -229,6 +230,7 @@ impl Renderer {
                         | vk::BufferUsageFlags::TRANSFER_DST,
                     location: MemoryLocation::GpuOnly,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                    allocation_priority: 1.0,
                 },
             )?;
 
@@ -268,6 +270,7 @@ impl Renderer {
                         | vk::BufferUsageFlags::SHADER_DEVICE_ADDRESS,
                     location: MemoryLocation::CpuToGpu,
                     allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                    allocation_priority: 1.0,
                 },
             )?;
             camera_buffer.write(&gpu_cameras, 0)?;
@@ -302,6 +305,7 @@ impl Renderer {
                 "render_target",
                 resolution,
                 self.attributes.format,
+                1.0,
             )?;
             frame.depth_buffer = Image::new_depth_buffer(
                 self.context.clone(),

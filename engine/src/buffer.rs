@@ -12,6 +12,7 @@ pub struct BufferAttributes {
     pub usage: vk::BufferUsageFlags,
     pub location: MemoryLocation,
     pub allocation_scheme: AllocationScheme,
+    pub allocation_priority: f32,
 }
 
 pub struct Buffer {
@@ -59,6 +60,14 @@ impl Buffer {
                 linear: true,
                 allocation_scheme: attributes.allocation_scheme,
             })?;
+
+            if let Some(ref extension) = attributes.context.pageable_device_local_memory_extension {
+                (extension.fp().set_device_memory_priority_ext)(
+                    attributes.context.device.handle(),
+                    allocation.memory(),
+                    attributes.allocation_priority,
+                );
+            }
 
             attributes.context.device.bind_buffer_memory(
                 handle,

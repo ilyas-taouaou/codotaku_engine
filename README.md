@@ -9,6 +9,7 @@ Features:
 
 - Multi window support.
 - Resolution scaling.
+- Automatic shader compilation with include support.
 
 ## Compatibility
 
@@ -17,10 +18,15 @@ Windows or Linux with Vulkan API 1.3 capable GPU driver with the following featu
 - dynamic_rendering
 - synchronization2
 - buffer_device_address
-- buffer_device_address_capture_replay (debug only)
 - descriptor_indexing
 - scalar_block_layout
 
+Optional extensions:
+
+- debug_utils (debug only)
+- buffer_device_address_capture_replay (debug only)
+- memory_priority and pageable_device_local_memory
+
 ## Contributions
 
-Contributions are welcome especially bug fixes, will reviewed in the next live streams.
+Contributions are welcome especially bug fixes.

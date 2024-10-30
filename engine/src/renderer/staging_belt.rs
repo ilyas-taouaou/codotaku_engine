@@ -29,6 +29,7 @@ impl StagingBelt {
                 usage: vk::BufferUsageFlags::TRANSFER_SRC,
                 location: MemoryLocation::CpuToGpu,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                allocation_priority: 1.0,
             },
         )?;
         Ok(Self {

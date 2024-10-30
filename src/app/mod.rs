@@ -16,7 +16,7 @@ impl ApplicationHandler for App {
         let primary_window_attributes = WindowAttributes::default().with_title("Primary window");
         let primary_window_renderer_attributes = WindowRendererAttributes {
             format: vk::Format::R16G16B16A16_SFLOAT,
-            depth_format: vk::Format::D32_SFLOAT,
+            depth_format: vk::Format::D16_UNORM,
             clear_color: vk::ClearColorValue {
                 float32: [0.0, 0.0, 0.0, 1.0],
             },
@@ -29,7 +29,7 @@ impl ApplicationHandler for App {
             WindowAttributes::default().with_title("Secondary window");
         let secondary_window_renderer_attributes = WindowRendererAttributes {
             format: vk::Format::R16G16B16A16_SFLOAT,
-            depth_format: vk::Format::D32_SFLOAT,
+            depth_format: vk::Format::D16_UNORM,
             clear_color: vk::ClearColorValue {
                 float32: [0.0, 0.0, 0.0, 1.0],
             },

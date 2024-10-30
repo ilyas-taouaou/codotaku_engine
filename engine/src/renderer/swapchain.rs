@@ -82,7 +82,7 @@ impl Swapchain {
                     .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
                     .pre_transform(vk::SurfaceTransformFlagsKHR::IDENTITY)
                     .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                    .present_mode(vk::PresentModeKHR::MAILBOX)
+                    .present_mode(vk::PresentModeKHR::FIFO)
                     .clipped(true)
                     .old_swapchain(self.handle),
                 None,
@@ -116,6 +116,7 @@ impl Swapchain {
                                 .aspect_mask(vk::ImageAspectFlags::COLOR)
                                 .level_count(1)
                                 .layer_count(1),
+                            allocation_priority: 1.0,
                         },
                     )?)
                 })

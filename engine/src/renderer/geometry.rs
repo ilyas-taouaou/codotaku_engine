@@ -174,6 +174,7 @@ impl Geometry {
                     | vk::BufferUsageFlags::TRANSFER_DST,
                 location: MemoryLocation::GpuOnly,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                allocation_priority: 1.0,
             },
         )?;
 
@@ -186,6 +187,7 @@ impl Geometry {
                 usage: vk::BufferUsageFlags::INDEX_BUFFER | vk::BufferUsageFlags::TRANSFER_DST,
                 location: MemoryLocation::GpuOnly,
                 allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                allocation_priority: 1.0,
             },
         )?;
 

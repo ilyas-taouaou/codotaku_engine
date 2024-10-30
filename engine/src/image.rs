@@ -9,6 +9,7 @@ use std::sync::Arc;
 pub struct ImageAttributes {
     pub location: MemoryLocation,
     pub allocation_scheme: AllocationScheme,
+    pub allocation_priority: f32,
     pub linear: bool,
     pub extent: vk::Extent3D,
     pub format: vk::Format,
@@ -86,6 +87,16 @@ impl Image {
             allocation_scheme: attributes.allocation_scheme,
         })?;
 
+        if let Some(ref extension) = context.pageable_device_local_memory_extension {
+            unsafe {
+                (extension.fp().set_device_memory_priority_ext)(
+                    context.device.handle(),
+                    allocation.memory(),
+                    attributes.allocation_priority,
+                );
+            }
+        }
+
         unsafe {
             context
                 .device
@@ -115,6 +126,7 @@ impl Image {
         name: &str,
         extent: vk::Extent2D,
         format: vk::Format,
+        allocation_priority: f32,
     ) -> Result<Image> {
         Image::new(
             context,
@@ -131,6 +143,7 @@ impl Image {
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
                     .level_count(1)
                     .layer_count(1),
+                allocation_priority,
             },
         )
     }
@@ -157,6 +170,7 @@ impl Image {
                     .aspect_mask(vk::ImageAspectFlags::DEPTH)
                     .level_count(1)
                     .layer_count(1),
+                allocation_priority: 1.0,
             },
         )
     }
@@ -245,7 +259,7 @@ impl ImageLayoutState {
 
     pub fn present() -> Self {
         Self {
-            access: vk::AccessFlags2::TRANSFER_READ,
+            access: vk::AccessFlags2::empty(),
             layout: vk::ImageLayout::PRESENT_SRC_KHR,
             stage: vk::PipelineStageFlags2::TRANSFER,
             queue_family: QUEUE_FAMILY_IGNORED,

@@ -16,6 +16,8 @@ use winit::window::Window;
 
 pub struct RenderingContext {
     pub queues: Vec<vk::Queue>,
+    pub pageable_device_local_memory_extension:
+        Option<ash::ext::pageable_device_local_memory::Device>,
     pub swapchain_extension: ash::khr::swapchain::Device,
     pub device: ash::Device,
     pub queue_family_indices: HashSet<u32>,
@@ -39,6 +41,8 @@ pub struct PhysicalDevice {
     pub features: vk::PhysicalDeviceFeatures,
     pub vulkan12_features: vk::PhysicalDeviceVulkan12Features<'static>,
     pub vulkan13_features: vk::PhysicalDeviceVulkan13Features<'static>,
+    pub pageable_device_local_memory_features:
+        vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT<'static>,
     pub memory_properties: vk::PhysicalDeviceMemoryProperties,
     pub queue_families: Vec<QueueFamily>,
 }
@@ -113,14 +117,33 @@ impl RenderingContext {
             let raw_display_handle = attributes.compatibility_window.display_handle()?.as_raw();
             let raw_window_handle = attributes.compatibility_window.window_handle()?.as_raw();
 
+            let available_extensions = entry
+                .enumerate_instance_extension_properties(None)?
+                .into_iter()
+                .map(|extension| {
+                    let name = extension.extension_name;
+                    std::ffi::CStr::from_ptr(name.as_ptr())
+                        .to_str()
+                        .unwrap()
+                        .to_string()
+                })
+                .collect::<HashSet<_>>();
+
+            let mut extensions =
+                ash_window::enumerate_required_extensions(raw_display_handle)?.to_vec();
+
+            if cfg!(debug_assertions) {
+                if available_extensions.contains(ash::ext::debug_utils::NAME.to_str()?) {
+                    extensions.push(ash::ext::debug_utils::NAME.as_ptr());
+                }
+            }
+
             let instance = entry.create_instance(
                 &vk::InstanceCreateInfo::default()
                     .application_info(
                         &vk::ApplicationInfo::default().api_version(vk::API_VERSION_1_3),
                     )
-                    .enabled_extension_names(ash_window::enumerate_required_extensions(
-                        raw_display_handle,
-                    )?),
+                    .enabled_extension_names(&extensions),
                 None,
             )?;
 
@@ -141,9 +164,12 @@ impl RenderingContext {
                     let properties = instance.get_physical_device_properties(handle);
                     let mut vulkan12_features = vk::PhysicalDeviceVulkan12Features::default();
                     let mut vulkan13_features = vk::PhysicalDeviceVulkan13Features::default();
+                    let mut pageable_device_local_memory_features =
+                        vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT::default();
                     let mut features = vk::PhysicalDeviceFeatures2::default()
                         .push_next(&mut vulkan12_features)
-                        .push_next(&mut vulkan13_features);
+                        .push_next(&mut vulkan13_features)
+                        .push_next(&mut pageable_device_local_memory_features);
                     instance.get_physical_device_features2(handle, &mut features);
                     let features = features.features;
                     let memory_properties = instance.get_physical_device_memory_properties(handle);
@@ -165,6 +191,7 @@ impl RenderingContext {
                         features,
                         vulkan12_features,
                         vulkan13_features,
+                        pageable_device_local_memory_features,
                         memory_properties,
                         queue_families,
                     }
@@ -215,11 +242,25 @@ impl RenderingContext {
                 .buffer_device_address_capture_replay
                 == vk::TRUE;
 
+            let is_pageable_device_local_memory_supported = physical_device
+                .pageable_device_local_memory_features
+                .pageable_device_local_memory
+                == vk::TRUE;
+
+            let mut device_extensions = vec![ash::khr::swapchain::NAME.as_ptr()];
+
+            let mut pageable_device_local_memory_extension = None;
+
+            if is_pageable_device_local_memory_supported {
+                device_extensions.push(ash::ext::memory_priority::NAME.as_ptr());
+                device_extensions.push(ash::ext::pageable_device_local_memory::NAME.as_ptr());
+            }
+
             let device = instance.create_device(
                 physical_device.handle,
                 &vk::DeviceCreateInfo::default()
                     .queue_create_infos(&queue_create_infos)
-                    .enabled_extension_names(&[ash::khr::swapchain::NAME.as_ptr()])
+                    .enabled_extension_names(&device_extensions)
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan12Features::default()
                             .buffer_device_address(true)
@@ -233,9 +274,21 @@ impl RenderingContext {
                         &mut vk::PhysicalDeviceVulkan13Features::default()
                             .dynamic_rendering(true)
                             .synchronization2(true),
+                    )
+                    .push_next(
+                        &mut vk::PhysicalDevicePageableDeviceLocalMemoryFeaturesEXT::default()
+                            .pageable_device_local_memory(
+                                is_pageable_device_local_memory_supported,
+                            ),
                     ),
                 None,
             )?;
+
+            if is_pageable_device_local_memory_supported {
+                pageable_device_local_memory_extension = Some(
+                    ash::ext::pageable_device_local_memory::Device::new(&instance, &device),
+                );
+            }
 
             let swapchain_extension = ash::khr::swapchain::Device::new(&instance, &device);
 
@@ -257,6 +310,7 @@ impl RenderingContext {
                 instance,
                 entry,
                 swapchain_extension,
+                pageable_device_local_memory_extension,
             })
         }
     }
