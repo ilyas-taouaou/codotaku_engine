@@ -82,7 +82,7 @@ impl Swapchain {
                     .image_sharing_mode(vk::SharingMode::EXCLUSIVE)
                     .pre_transform(vk::SurfaceTransformFlagsKHR::IDENTITY)
                     .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
-                    .present_mode(vk::PresentModeKHR::FIFO)
+                    .present_mode(vk::PresentModeKHR::MAILBOX)
                     .clipped(true)
                     .old_swapchain(self.handle),
                 None,

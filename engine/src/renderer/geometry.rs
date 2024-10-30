@@ -5,7 +5,10 @@ use ash::vk;
 use gpu_allocator::vulkan::{AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
 use nalgebra as na;
+use std::fmt;
+use std::path::Path;
 use std::sync::Arc;
+use tobj::GPU_LOAD_OPTIONS;
 
 type VertexIndex = u32;
 
@@ -13,7 +16,7 @@ type VertexIndex = u32;
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: na::Vector3<f32>,
-    color: na::Vector3<f32>,
+    pub normal: na::Vector3<f32>,
 }
 
 pub struct Geometry {
@@ -35,127 +38,28 @@ impl GPUGeometry {
     }
 }
 
-pub struct Circle {
-    pub radius: f32,
-    pub segments: usize,
-}
-
-pub struct Cube {
-    pub size: f32,
-}
-
 impl Geometry {
-    pub fn new_circle(circle: Circle, color: na::Vector3<f32>) -> Self {
-        let Circle { radius, segments } = circle;
-        let mut vertices = Vec::with_capacity(segments + 1);
-        vertices.push(Vertex {
-            position: na::Vector3::new(0.0, 0.0, 0.0),
-            color,
-        });
-        for i in 0..segments {
-            let angle = 2.0 * std::f32::consts::PI * (i as f32) / (segments as f32);
-            vertices.push(Vertex {
-                position: na::Vector3::new(radius * angle.cos(), radius * angle.sin(), 0.0),
-                color: na::Vector3::new(1.0, 1.0, 1.0),
-            });
-        }
-        let mut indices = Vec::with_capacity(segments * 3);
-        for i in 0..segments {
-            indices.push(0);
-            indices.push(i as u32 + 1);
-            indices.push(((i + 1) % segments) as u32 + 1);
-        }
-
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<VertexIndex>) -> Self {
         Self { vertices, indices }
     }
 
-    pub fn new_cube(cube: Cube, color: na::Vector3<f32>) -> Self {
-        let Cube { size: half_size } = cube;
-        let vertices = vec![
-            Vertex {
-                position: na::Vector3::new(-half_size, -half_size, -half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(half_size, -half_size, -half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(half_size, half_size, -half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(-half_size, half_size, -half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(-half_size, -half_size, half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(half_size, -half_size, half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(half_size, half_size, half_size),
-                color,
-            },
-            Vertex {
-                position: na::Vector3::new(-half_size, half_size, half_size),
-                color,
-            },
-        ];
+    pub fn load_obj(path: impl AsRef<Path> + fmt::Debug) -> Result<Self> {
+        let (models, materials) = tobj::load_obj(path.as_ref(), &GPU_LOAD_OPTIONS)?;
 
-        let indices = vec![
-            0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7, 4, 3, 2, 6, 6, 7,
-            3, 0, 4, 5, 5, 1, 0,
-        ];
+        let mesh = models.into_iter().next().unwrap().mesh;
 
-        Self { vertices, indices }
-    }
-
-    pub fn debug_cube() -> Self {
-        let vertices = vec![
-            Vertex {
-                position: na::Vector3::new(-1.0, -1.0, -1.0),
-                color: na::Vector3::new(1.0, 0.0, 0.0),
-            },
-            Vertex {
-                position: na::Vector3::new(1.0, -1.0, -1.0),
-                color: na::Vector3::new(0.0, 1.0, 0.0),
-            },
-            Vertex {
-                position: na::Vector3::new(1.0, 1.0, -1.0),
-                color: na::Vector3::new(0.0, 0.0, 1.0),
-            },
-            Vertex {
-                position: na::Vector3::new(-1.0, 1.0, -1.0),
-                color: na::Vector3::new(1.0, 1.0, 0.0),
-            },
-            Vertex {
-                position: na::Vector3::new(-1.0, -1.0, 1.0),
-                color: na::Vector3::new(0.0, 1.0, 1.0),
-            },
-            Vertex {
-                position: na::Vector3::new(1.0, -1.0, 1.0),
-                color: na::Vector3::new(1.0, 0.0, 1.0),
-            },
-            Vertex {
-                position: na::Vector3::new(1.0, 1.0, 1.0),
-                color: na::Vector3::new(1.0, 1.0, 1.0),
-            },
-            Vertex {
-                position: na::Vector3::new(-1.0, 1.0, 1.0),
-                color: na::Vector3::new(0.0, 0.0, 0.0),
-            },
-        ];
-
-        let indices = vec![
-            0, 1, 2, 2, 3, 0, 1, 5, 6, 6, 2, 1, 7, 6, 5, 5, 4, 7, 4, 0, 3, 3, 7, 4, 3, 2, 6, 6, 7,
-            3, 0, 4, 5, 5, 1, 0,
-        ];
-
-        Self { vertices, indices }
+        Ok(Self {
+            vertices: mesh
+                .positions
+                .chunks(3)
+                .zip(mesh.normals.chunks(3))
+                .map(|(position, normal)| Vertex {
+                    position: na::Vector3::new(position[0], position[1], position[2]),
+                    normal: na::Vector3::new(normal[0], normal[1], normal[2]),
+                })
+                .collect(),
+            indices: mesh.indices,
+        })
     }
 
     pub fn create_gpu_geometry(

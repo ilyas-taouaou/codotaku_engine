@@ -1,7 +1,8 @@
 #version 460
 #include "push_constants.glsl"
 
-layout (location = 0) out vec3 fragColor;
+layout (location = 0) out vec3 fragPosition;
+layout (location = 1) out vec3 fragNormal;
 
 void main() {
     Vertex vertex = pushConstants.vertexBuffer.vertices[gl_VertexIndex];
@@ -10,5 +11,6 @@ void main() {
 
     mat4 mvp = camera.projection * camera.view * instance.model;
     gl_Position = mvp * vec4(vertex.position, 1.0);
-    fragColor = vertex.color;
+    fragPosition = vec3(instance.model * vec4(vertex.position, 1.0));
+    fragNormal = vertex.normal;
 }

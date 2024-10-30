@@ -74,8 +74,18 @@ struct GPUInstance {
 }
 
 impl Instance {
-    fn new(transform: na::Affine3<f32>) -> Self {
-        Self { transform }
+    fn new(
+        position: na::Vector3<f32>,
+        rotation: na::UnitQuaternion<f32>,
+        scale: na::Vector3<f32>,
+    ) -> Self {
+        Self {
+            transform: na::Affine3::from_matrix_unchecked(
+                na::Matrix4::new_translation(&position)
+                    * na::Matrix4::from(rotation)
+                    * na::Matrix4::new_nonuniform_scaling(&scale),
+            ),
+        }
     }
 
     fn to_gpu_instance(&self) -> GPUInstance {
@@ -196,20 +206,22 @@ impl Renderer {
             context.device.destroy_shader_module(vertex_shader, None);
             context.device.destroy_shader_module(fragment_shader, None);
 
-            let gpu_geometry =
-                Geometry::debug_cube().create_gpu_geometry(context.clone(), &mut allocator)?;
+            let gpu_geometry = Geometry::load_obj("res/viking_room.obj")?
+                .create_gpu_geometry(context.clone(), &mut allocator)?;
 
             // generate instances in a grid
-            let instances = (-10..10)
+            let instances = (-2..2)
                 .flat_map(|x| {
-                    (-10..10).map(move |y| {
-                        Instance::new(na::Affine3::from_matrix_unchecked(
-                            na::Matrix4::new_translation(&na::Vector3::new(
-                                x as f32 * 3.0,
-                                0.0,
-                                y as f32 * 3.0,
-                            )),
-                        ))
+                    (-2..2).map(move |y| {
+                        Instance::new(
+                            na::Vector3::new(x as f32 * 2.0, 0.0, y as f32 * 2.0),
+                            // rotate 90 degrees around the y axis
+                            na::UnitQuaternion::from_axis_angle(
+                                &na::Unit::new_normalize(na::Vector3::x()),
+                                std::f32::consts::FRAC_PI_2,
+                            ),
+                            na::Vector3::new(1.0, 1.0, 1.0),
+                        )
                     })
                 })
                 .collect::<Vec<_>>();
@@ -342,7 +354,7 @@ impl Renderer {
         let camera = &mut self.cameras[0];
         let t = (Instant::now() - self.start_time).as_secs_f32();
         camera.view = na::Isometry3::look_at_rh(
-            &na::Point3::new(10.0 * t.cos(), -20.0, 10.0 * t.sin()),
+            &na::Point3::new(t.cos(), -1.0, t.sin()),
             &na::Point3::new(0.0, 0.0, 0.0),
             &na::Vector3::y(),
         );
