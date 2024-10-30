@@ -1,4 +1,4 @@
-use crate::rendering_context::{RenderingContext, IS_DEBUG};
+use crate::rendering_context::RenderingContext;
 use anyhow::{Context as AnyhowContext, Result};
 use ash::vk;
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
@@ -25,15 +25,25 @@ pub struct Buffer {
 impl Buffer {
     pub fn new(allocator: &mut Allocator, attributes: BufferAttributes) -> Result<Self> {
         unsafe {
+            let is_debug = cfg!(debug_assertions);
+            let is_capture_replay_supported = attributes
+                .context
+                .physical_device
+                .vulkan12_features
+                .buffer_device_address_capture_replay
+                == vk::TRUE;
+
+            let flags = if is_debug && is_capture_replay_supported {
+                vk::BufferCreateFlags::DEVICE_ADDRESS_CAPTURE_REPLAY
+            } else {
+                vk::BufferCreateFlags::empty()
+            };
+
             let handle = attributes.context.device.create_buffer(
                 &vk::BufferCreateInfo::default()
                     .size(attributes.size)
                     .usage(attributes.usage)
-                    .flags(if IS_DEBUG {
-                        vk::BufferCreateFlags::DEVICE_ADDRESS_CAPTURE_REPLAY
-                    } else {
-                        vk::BufferCreateFlags::empty()
-                    }),
+                    .flags(flags),
                 None,
             )?;
 

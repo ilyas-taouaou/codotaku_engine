@@ -3,9 +3,6 @@
 - The Vulkan instance is created only with the required extensions for the window system.
 - The Vulkan instance is created with the required extensions for the dynamic rendering and buffer device address features.
  */
-
-pub const IS_DEBUG: bool = true;
-
 pub use crate::image::{Image, ImageAttributes, ImageLayoutState};
 use anyhow::Result;
 use ash::vk;
@@ -211,6 +208,13 @@ impl RenderingContext {
                 })
                 .collect::<Vec<_>>();
 
+            let is_debug = cfg!(debug_assertions);
+
+            let is_capture_replay_supported = physical_device
+                .vulkan12_features
+                .buffer_device_address_capture_replay
+                == vk::TRUE;
+
             let device = instance.create_device(
                 physical_device.handle,
                 &vk::DeviceCreateInfo::default()
@@ -220,11 +224,7 @@ impl RenderingContext {
                         &mut vk::PhysicalDeviceVulkan12Features::default()
                             .buffer_device_address(true)
                             .buffer_device_address_capture_replay(
-                                IS_DEBUG
-                                    && (physical_device
-                                        .vulkan12_features
-                                        .buffer_device_address_capture_replay
-                                        == vk::TRUE),
+                                is_debug && is_capture_replay_supported,
                             )
                             .descriptor_indexing(true)
                             .scalar_block_layout(true),
