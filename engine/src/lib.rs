@@ -17,7 +17,7 @@ pub use crate::renderer::window_renderer::WindowRendererAttributes;
 pub use anyhow;
 pub use ash::vk;
 use renderdoc::RenderDoc;
-use tracing::{error, info};
+use tracing::info;
 pub use winit;
 use winit::keyboard::{Key, NamedKey};
 
@@ -35,7 +35,7 @@ impl Engine {
         primary_window_attributes: WindowAttributes,
         primary_renderer_attributes: WindowRendererAttributes,
     ) -> Result<Self> {
-        let mut renderdoc = RenderDoc::new().ok();
+        let renderdoc = RenderDoc::new().ok();
         if renderdoc.is_some() {
             info!("RenderDoc is available");
         }

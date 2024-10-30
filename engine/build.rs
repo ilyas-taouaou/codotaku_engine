@@ -9,6 +9,14 @@ fn main() -> anyhow::Result<()> {
         shaderc::EnvVersion::Vulkan1_3 as u32,
     );
     options.set_source_language(shaderc::SourceLanguage::GLSL);
+    options.set_include_callback(|name, _, _, _| {
+        let path = format!("devres/shaders/{}", name);
+        let source = std::fs::read_to_string(&path).unwrap();
+        Ok(shaderc::ResolvedInclude {
+            resolved_name: name.to_string(),
+            content: source,
+        })
+    });
 
     let is_debug_build = std::env::var("OPT_LEVEL")? == "0";
 
