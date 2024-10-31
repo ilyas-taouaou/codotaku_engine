@@ -45,6 +45,7 @@ pub struct Renderer {
     descriptor_sets: Vec<vk::DescriptorSet>,
 
     textures: Vec<Image>,
+    pub texture_sampler: vk::Sampler,
 }
 
 const SHADERS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/res/shaders/");
@@ -439,6 +440,7 @@ impl Renderer {
                 descriptor_pool,
                 descriptor_sets,
                 textures,
+                texture_sampler,
             })
         }
     }
@@ -447,6 +449,8 @@ impl Renderer {
         for frame in self.frames.iter_mut() {
             frame.render_target.destroy(&mut self.allocator)?;
             frame.depth_buffer.destroy(&mut self.allocator)?;
+            frame.msaa_render_target.destroy(&mut self.allocator)?;
+            frame.msaa_depth_buffer.destroy(&mut self.allocator)?;
             frame.render_target = Image::new_render_target(
                 self.context.clone(),
                 &mut self.allocator,
@@ -461,6 +465,22 @@ impl Renderer {
                 "depth_buffer",
                 resolution,
                 self.attributes.depth_format,
+            )?;
+            frame.msaa_render_target = Image::new_msaa_render_target(
+                self.context.clone(),
+                &mut self.allocator,
+                "msaa_render_target",
+                resolution,
+                self.attributes.format,
+                vk::SampleCountFlags::TYPE_4,
+            )?;
+            frame.msaa_depth_buffer = Image::new_msaa_depth_buffer(
+                self.context.clone(),
+                &mut self.allocator,
+                "msaa_depth_buffer",
+                resolution,
+                self.attributes.depth_format,
+                vk::SampleCountFlags::TYPE_4,
             )?;
         }
 
@@ -551,6 +571,22 @@ impl Drop for Renderer {
     fn drop(&mut self) {
         unsafe {
             self.context.device.device_wait_idle().unwrap();
+
+            self.context
+                .device
+                .destroy_descriptor_pool(self.descriptor_pool, None);
+
+            self.context
+                .device
+                .destroy_descriptor_set_layout(self.descriptor_set_layout, None);
+
+            self.textures.iter_mut().for_each(|texture| {
+                texture.destroy(&mut self.allocator).unwrap();
+            });
+
+            self.context
+                .device
+                .destroy_sampler(self.texture_sampler, None);
 
             self.instance_buffer.destroy(&mut self.allocator).unwrap();
             self.camera_buffer.destroy(&mut self.allocator).unwrap();
