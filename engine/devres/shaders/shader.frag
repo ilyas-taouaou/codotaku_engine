@@ -17,7 +17,6 @@ void main() {
     Camera camera = pushConstants.cameraBuffer.cameras[0];
     vec3 cameraPosition = camera.position;
 
-    // get texture color
     vec4 texColor = texture(textures[0], fragTexCoord);
 
     float diffuse = max(dot(fragNormal, sunDirection), 0.0);

@@ -59,7 +59,7 @@ fn load_shader_module(
 }
 
 use crate::buffer::{Buffer, BufferAttributes};
-use crate::image::{ImageAttributes, ImageLayoutState};
+use crate::image::ImageAttributes;
 use nalgebra as na;
 
 struct Camera {
@@ -406,21 +406,29 @@ impl Renderer {
                 .device
                 .create_sampler(&vk::SamplerCreateInfo::default(), None)?;
 
-            for texture in textures.iter_mut() {
-                commands.transition_image_layout(texture, ImageLayoutState::shader_read());
+            let image_infos = textures
+                .iter()
+                .map(|texture| {
+                    vk::DescriptorImageInfo::default()
+                        .image_view(texture.view)
+                        .sampler(texture_sampler)
+                        .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)
+                })
+                .collect::<Vec<_>>();
 
-                context.device.update_descriptor_sets(
-                    &[vk::WriteDescriptorSet::default()
-                        .dst_set(descriptor_sets[0])
-                        .dst_binding(0)
-                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
-                        .image_info(&[vk::DescriptorImageInfo::default()
-                            .image_view(texture.view)
-                            .sampler(texture_sampler)
-                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)])],
-                    &[],
-                );
-            }
+            context.device.update_descriptor_sets(
+                &descriptor_sets
+                    .iter()
+                    .map(|descriptor_set| {
+                        vk::WriteDescriptorSet::default()
+                            .dst_set(*descriptor_set)
+                            .dst_binding(0)
+                            .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                            .image_info(&image_infos)
+                    })
+                    .collect::<Vec<_>>(),
+                &[],
+            );
 
             Ok(Self {
                 allocator,
