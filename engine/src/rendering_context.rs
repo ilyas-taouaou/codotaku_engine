@@ -1,8 +1,3 @@
-/* Assumptions:
-- The Vulkan instance is created with the Vulkan 1.3 API version.
-- The Vulkan instance is created only with the required extensions for the window system.
-- The Vulkan instance is created with the required extensions for the dynamic rendering and buffer device address features.
- */
 pub use crate::image::{Image, ImageAttributes, ImageLayoutState};
 use anyhow::Result;
 use ash::vk;
@@ -409,11 +404,9 @@ impl RenderingContext {
                                 .rasterization_samples(vk::SampleCountFlags::TYPE_1),
                         )
                         .color_blend_state(
-                            &vk::PipelineColorBlendStateCreateInfo::default().attachments(&[
-                                vk::PipelineColorBlendAttachmentState::default()
-                                    .color_write_mask(vk::ColorComponentFlags::RGBA)
-                                    .blend_enable(false),
-                            ]),
+                            &vk::PipelineColorBlendStateCreateInfo::default()
+                                .attachments(&[vk::PipelineColorBlendAttachmentState::default()
+                                    .color_write_mask(vk::ColorComponentFlags::RGBA)]),
                         )
                         .dynamic_state(
                             &vk::PipelineDynamicStateCreateInfo::default().dynamic_states(&[
@@ -427,6 +420,10 @@ impl RenderingContext {
                                 .depth_test_enable(true)
                                 .depth_write_enable(true)
                                 .depth_compare_op(vk::CompareOp::LESS_OR_EQUAL),
+                        )
+                        .multisample_state(
+                            &vk::PipelineMultisampleStateCreateInfo::default()
+                                .rasterization_samples(vk::SampleCountFlags::TYPE_4),
                         )
                         .push_next(
                             &mut vk::PipelineRenderingCreateInfo::default()

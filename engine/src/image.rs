@@ -1,7 +1,7 @@
 use crate::rendering_context::RenderingContext;
 use anyhow::Result;
 use ash::vk;
-use ash::vk::QUEUE_FAMILY_IGNORED;
+use ash::vk::{Extent2D, Format, QUEUE_FAMILY_IGNORED};
 use gpu_allocator::vulkan::{Allocation, AllocationCreateDesc, AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
 use std::sync::Arc;
@@ -15,6 +15,7 @@ pub struct ImageAttributes {
     pub format: vk::Format,
     pub usage: vk::ImageUsageFlags,
     pub subresource_range: vk::ImageSubresourceRange,
+    pub samples: vk::SampleCountFlags,
 }
 
 pub struct Image {
@@ -68,7 +69,7 @@ impl Image {
                     .extent(attributes.extent)
                     .mip_levels(1)
                     .array_layers(1)
-                    .samples(vk::SampleCountFlags::TYPE_1)
+                    .samples(attributes.samples)
                     .tiling(vk::ImageTiling::OPTIMAL)
                     .usage(attributes.usage)
                     .sharing_mode(vk::SharingMode::EXCLUSIVE)
@@ -120,6 +121,36 @@ impl Image {
         })
     }
 
+    pub fn new_msaa_render_target(
+        context: Arc<RenderingContext>,
+        allocator: &mut Allocator,
+        name: &str,
+        extent: Extent2D,
+        format: Format,
+        samples: vk::SampleCountFlags,
+    ) -> Result<Self> {
+        Image::new(
+            context,
+            allocator,
+            name,
+            ImageAttributes {
+                extent: extent.into(),
+                format,
+                usage: vk::ImageUsageFlags::COLOR_ATTACHMENT
+                    | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+                location: MemoryLocation::GpuOnly,
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                subresource_range: vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .level_count(1)
+                    .layer_count(1),
+                allocation_priority: 1.0,
+                samples,
+            },
+        )
+    }
+
     pub fn new_render_target(
         context: Arc<RenderingContext>,
         allocator: &mut Allocator,
@@ -144,6 +175,7 @@ impl Image {
                     .level_count(1)
                     .layer_count(1),
                 allocation_priority,
+                samples: vk::SampleCountFlags::TYPE_1,
             },
         )
     }
@@ -171,6 +203,37 @@ impl Image {
                     .level_count(1)
                     .layer_count(1),
                 allocation_priority: 1.0,
+                samples: vk::SampleCountFlags::TYPE_1,
+            },
+        )
+    }
+
+    pub fn new_msaa_depth_buffer(
+        context: Arc<RenderingContext>,
+        allocator: &mut Allocator,
+        name: &str,
+        extent: vk::Extent2D,
+        format: vk::Format,
+        samples: vk::SampleCountFlags,
+    ) -> Result<Image> {
+        Image::new(
+            context,
+            allocator,
+            name,
+            ImageAttributes {
+                extent: extent.into(),
+                format,
+                usage: vk::ImageUsageFlags::DEPTH_STENCIL_ATTACHMENT
+                    | vk::ImageUsageFlags::TRANSIENT_ATTACHMENT,
+                location: MemoryLocation::GpuOnly,
+                linear: false,
+                allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                subresource_range: vk::ImageSubresourceRange::default()
+                    .aspect_mask(vk::ImageAspectFlags::DEPTH)
+                    .level_count(1)
+                    .layer_count(1),
+                allocation_priority: 1.0,
+                samples,
             },
         )
     }

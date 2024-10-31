@@ -13,6 +13,7 @@ use ash::vk;
 use geometry::Geometry;
 use gpu_allocator::vulkan::{AllocationScheme, Allocator};
 use gpu_allocator::MemoryLocation;
+use itertools::multizip;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
@@ -20,6 +21,8 @@ use std::time::Instant;
 struct Frame {
     render_target: Image,
     depth_buffer: Image,
+    msaa_render_target: Image,
+    msaa_depth_buffer: Image,
 }
 
 pub struct Renderer {
@@ -175,14 +178,50 @@ impl Renderer {
                 )
             })
             .collect::<Result<Vec<_>>>()?;
-        let frames = render_targets
-            .into_iter()
-            .zip(depth_buffers)
-            .map(|(render_target, depth_image)| Frame {
-                render_target,
-                depth_buffer: depth_image,
+
+        let msaa_render_targets = (0..attributes.buffering)
+            .map(|_| {
+                Image::new_msaa_render_target(
+                    context.clone(),
+                    &mut allocator,
+                    "msaa_render_target",
+                    attributes.extent,
+                    attributes.format,
+                    vk::SampleCountFlags::TYPE_4,
+                )
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>>>()?;
+
+        let msaa_depth_buffers = (0..attributes.buffering)
+            .map(|_| {
+                Image::new_msaa_depth_buffer(
+                    context.clone(),
+                    &mut allocator,
+                    "msaa_depth_buffer",
+                    attributes.extent,
+                    attributes.depth_format,
+                    vk::SampleCountFlags::TYPE_4,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        use itertools::Itertools;
+
+        let frames = multizip((
+            render_targets,
+            depth_buffers,
+            msaa_render_targets,
+            msaa_depth_buffers,
+        ))
+        .map(
+            |(render_target, depth_buffer, msaa_render_target, msaa_depth_buffer)| Frame {
+                render_target,
+                depth_buffer,
+                msaa_render_target,
+                msaa_depth_buffer,
+            },
+        )
+        .collect();
 
         unsafe {
             let pipeline_layout = context.device.create_pipeline_layout(
@@ -217,7 +256,7 @@ impl Renderer {
                     (-2..2).map(move |y| {
                         Instance::new(
                             na::Vector3::new(x as f32 * 2.0, 0.0, y as f32 * 2.0),
-                            // rotate 90 degrees around the y axis
+                            // rotate 90 degrees around the y-axis
                             na::UnitQuaternion::from_axis_angle(
                                 &na::Unit::new_normalize(na::Vector3::x()),
                                 std::f32::consts::FRAC_PI_2,
@@ -349,7 +388,6 @@ impl Renderer {
     ) -> Result<&mut Image> {
         let frame = &mut self.frames[render_target_index];
         let render_target = &mut frame.render_target;
-        let depth_buffer = &mut frame.depth_buffer;
 
         render_target.reset_layout();
 
@@ -369,8 +407,7 @@ impl Renderer {
         self.camera_buffer.write(&gpu_cameras, 0)?;
 
         commands.begin_rendering(
-            render_target,
-            depth_buffer,
+            frame,
             clear_color,
             vk::Rect2D::default().extent(self.attributes.extent),
         );
@@ -426,6 +463,14 @@ impl Drop for Renderer {
             for mut frame in self.frames.drain(..) {
                 frame.render_target.destroy(&mut self.allocator).unwrap();
                 frame.depth_buffer.destroy(&mut self.allocator).unwrap();
+                frame
+                    .msaa_render_target
+                    .destroy(&mut self.allocator)
+                    .unwrap();
+                frame
+                    .msaa_depth_buffer
+                    .destroy(&mut self.allocator)
+                    .unwrap();
             }
 
             self.context.device.destroy_pipeline(self.pipeline, None);

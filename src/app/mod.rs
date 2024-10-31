@@ -33,7 +33,7 @@ impl ApplicationHandler for App {
             clear_color: vk::ClearColorValue {
                 float32: [0.0, 0.0, 0.0, 1.0],
             },
-            ssaa: 0.1,
+            ssaa: 1.0,
             ssaa_filter: vk::Filter::NEAREST,
             in_flight_frames_count: 2,
         };

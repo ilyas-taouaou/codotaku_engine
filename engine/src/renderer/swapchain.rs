@@ -117,6 +117,7 @@ impl Swapchain {
                                 .level_count(1)
                                 .layer_count(1),
                             allocation_priority: 1.0,
+                            samples: Default::default(),
                         },
                     )?)
                 })

@@ -7,9 +7,10 @@ Focusing on performance, cutting edge technology and developer experience more t
 
 Features:
 
-- Multi window support.
+- Multi window.
 - Resolution scaling.
-- Automatic shader compilation with include support.
+- Automatic shader compilation with includes.
+- MSAA.
 
 ## Compatibility
 

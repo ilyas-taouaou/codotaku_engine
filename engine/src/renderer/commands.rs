@@ -1,4 +1,5 @@
 use crate::buffer::Buffer;
+use crate::renderer::Frame;
 use crate::rendering_context::{Image, ImageLayoutState, RenderingContext};
 use anyhow::Result;
 use ash::vk;
@@ -197,13 +198,26 @@ impl Commands {
 
     pub fn begin_rendering(
         &self,
-        render_target: &mut Image,
-        depth_buffer: &mut Image,
+        frame: &mut Frame,
         clear_color: vk::ClearColorValue,
         render_area: vk::Rect2D,
     ) -> &Self {
-        self.ensure_image_layout(render_target, ImageLayoutState::color_attachment())
-            .ensure_image_layout(depth_buffer, ImageLayoutState::depth_stencil_attachment());
+        self.ensure_image_layout(
+            &mut frame.render_target,
+            ImageLayoutState::color_attachment(),
+        )
+        .ensure_image_layout(
+            &mut frame.depth_buffer,
+            ImageLayoutState::depth_stencil_attachment(),
+        )
+        .ensure_image_layout(
+            &mut frame.msaa_render_target,
+            ImageLayoutState::color_attachment(),
+        )
+        .ensure_image_layout(
+            &mut frame.msaa_depth_buffer,
+            ImageLayoutState::depth_stencil_attachment(),
+        );
 
         unsafe {
             self.context.device.cmd_begin_rendering(
@@ -211,16 +225,19 @@ impl Commands {
                 &vk::RenderingInfo::default()
                     .layer_count(1)
                     .color_attachments(&[vk::RenderingAttachmentInfo::default()
-                        .image_view(render_target.view)
-                        .image_layout(render_target.layout.layout)
+                        .image_view(frame.msaa_render_target.view)
+                        .image_layout(frame.msaa_render_target.layout.layout)
                         .clear_value(vk::ClearValue { color: clear_color })
                         .load_op(vk::AttachmentLoadOp::CLEAR)
-                        .store_op(vk::AttachmentStoreOp::STORE)])
+                        .store_op(vk::AttachmentStoreOp::STORE)
+                        .resolve_image_layout(frame.render_target.layout.layout)
+                        .resolve_image_view(frame.render_target.view)
+                        .resolve_mode(vk::ResolveModeFlagsKHR::AVERAGE)])
                     .render_area(render_area)
                     .depth_attachment(
                         &vk::RenderingAttachmentInfo::default()
-                            .image_view(depth_buffer.view)
-                            .image_layout(depth_buffer.layout.layout)
+                            .image_view(frame.msaa_depth_buffer.view)
+                            .image_layout(frame.msaa_depth_buffer.layout.layout)
                             .clear_value(vk::ClearValue {
                                 depth_stencil: vk::ClearDepthStencilValue {
                                     depth: 1.0,
@@ -228,7 +245,10 @@ impl Commands {
                                 },
                             })
                             .load_op(vk::AttachmentLoadOp::CLEAR)
-                            .store_op(vk::AttachmentStoreOp::STORE),
+                            .store_op(vk::AttachmentStoreOp::STORE)
+                            .resolve_image_layout(frame.depth_buffer.layout.layout)
+                            .resolve_image_view(frame.depth_buffer.view)
+                            .resolve_mode(vk::ResolveModeFlagsKHR::AVERAGE),
                     ),
             );
         }

@@ -44,7 +44,7 @@ impl Geometry {
     }
 
     pub fn load_obj(path: impl AsRef<Path> + fmt::Debug) -> Result<Self> {
-        let (models, materials) = tobj::load_obj(path.as_ref(), &GPU_LOAD_OPTIONS)?;
+        let (models, _materials) = tobj::load_obj(path.as_ref(), &GPU_LOAD_OPTIONS)?;
 
         let mesh = models.into_iter().next().unwrap().mesh;
 
