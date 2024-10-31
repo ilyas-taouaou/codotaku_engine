@@ -6,8 +6,12 @@ use ash::vk::CommandBuffer;
 use std::sync::Arc;
 use winit::window::Window;
 
+use crate::image;
+use crate::image::ImageAttributes;
 use crate::renderer::commands::Commands;
 use anyhow::Result;
+use gpu_allocator::vulkan::AllocationScheme;
+use gpu_allocator::MemoryLocation;
 use tracing::trace;
 
 struct Frame {
@@ -97,7 +101,7 @@ impl WindowRenderer {
 
             let commands = Commands::new(context.clone(), command_buffer)?;
 
-            let renderer = Renderer::new(
+            let mut renderer = Renderer::new(
                 context.clone(),
                 &commands,
                 RendererAttributes {

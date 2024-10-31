@@ -39,6 +39,12 @@ pub struct Renderer {
     attributes: RendererAttributes,
     instance_buffer: Buffer,
     instances: Vec<Instance>,
+
+    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_pool: vk::DescriptorPool,
+    descriptor_sets: Vec<vk::DescriptorSet>,
+
+    textures: Vec<Image>,
 }
 
 const SHADERS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/res/shaders/");
@@ -52,6 +58,7 @@ fn load_shader_module(
 }
 
 use crate::buffer::{Buffer, BufferAttributes};
+use crate::image::{ImageAttributes, ImageLayoutState};
 use nalgebra as na;
 
 struct Camera {
@@ -224,29 +231,6 @@ impl Renderer {
         .collect();
 
         unsafe {
-            let pipeline_layout = context.device.create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::default().push_constant_ranges(&[
-                    vk::PushConstantRange::default()
-                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
-                        .offset(0)
-                        .size(size_of::<PushConstants>() as u32),
-                ]),
-                None,
-            )?;
-
-            let pipeline = context.create_graphics_pipeline(
-                vertex_shader,
-                fragment_shader,
-                attributes.extent,
-                attributes.format,
-                attributes.depth_format,
-                pipeline_layout,
-                Default::default(),
-            )?;
-
-            context.device.destroy_shader_module(vertex_shader, None);
-            context.device.destroy_shader_module(fragment_shader, None);
-
             let gpu_geometry = Geometry::load_obj("res/viking_room.obj")?
                 .create_gpu_geometry(context.clone(), &mut allocator)?;
 
@@ -287,16 +271,101 @@ impl Renderer {
                 },
             )?;
 
+            let descriptor_set_layout = context.device.create_descriptor_set_layout(
+                &vk::DescriptorSetLayoutCreateInfo::default()
+                    .bindings(&[vk::DescriptorSetLayoutBinding::default()
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .descriptor_count(1000)
+                        .stage_flags(vk::ShaderStageFlags::ALL)])
+                    .flags(vk::DescriptorSetLayoutCreateFlags::UPDATE_AFTER_BIND_POOL)
+                    .push_next(
+                        &mut vk::DescriptorSetLayoutBindingFlagsCreateInfo::default()
+                            .binding_flags(&[vk::DescriptorBindingFlags::PARTIALLY_BOUND
+                                | vk::DescriptorBindingFlags::UPDATE_AFTER_BIND]),
+                    ),
+                None,
+            )?;
+
+            let pipeline_layout = context.device.create_pipeline_layout(
+                &vk::PipelineLayoutCreateInfo::default()
+                    .push_constant_ranges(&[vk::PushConstantRange::default()
+                        .stage_flags(vk::ShaderStageFlags::VERTEX | vk::ShaderStageFlags::FRAGMENT)
+                        .offset(0)
+                        .size(size_of::<PushConstants>() as u32)])
+                    .set_layouts(&[descriptor_set_layout]),
+                None,
+            )?;
+
+            let pipeline = context.create_graphics_pipeline(
+                vertex_shader,
+                fragment_shader,
+                attributes.extent,
+                attributes.format,
+                attributes.depth_format,
+                pipeline_layout,
+                Default::default(),
+            )?;
+
+            context.device.destroy_shader_module(vertex_shader, None);
+            context.device.destroy_shader_module(fragment_shader, None);
+
+            let descriptor_pool = context.device.create_descriptor_pool(
+                &vk::DescriptorPoolCreateInfo::default()
+                    .max_sets(1000)
+                    .pool_sizes(&[vk::DescriptorPoolSize::default()
+                        .ty(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .descriptor_count(1000)])
+                    .flags(vk::DescriptorPoolCreateFlags::UPDATE_AFTER_BIND),
+                None,
+            )?;
+
+            let descriptor_sets = context.device.allocate_descriptor_sets(
+                &vk::DescriptorSetAllocateInfo::default()
+                    .descriptor_pool(descriptor_pool)
+                    .set_layouts(&[descriptor_set_layout]),
+            )?;
+
+            let image = ::image::ImageReader::open("res/viking_room.png")?.decode()?;
+            let image = image.into_rgba8();
+
+            let mut texture = Image::new(
+                context.clone(),
+                &mut allocator,
+                "viking_room.png",
+                ImageAttributes {
+                    location: MemoryLocation::GpuOnly,
+                    allocation_scheme: AllocationScheme::GpuAllocatorManaged,
+                    allocation_priority: 1.0,
+                    format: vk::Format::R8G8B8A8_UNORM,
+                    extent: vk::Extent3D {
+                        width: image.width(),
+                        height: image.height(),
+                        depth: 1,
+                    },
+                    samples: vk::SampleCountFlags::TYPE_1,
+                    usage: vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+                    linear: false,
+                    subresource_range: vk::ImageSubresourceRange::default()
+                        .aspect_mask(vk::ImageAspectFlags::COLOR)
+                        .level_count(1)
+                        .layer_count(1),
+                },
+            )?;
+
             let mut staging_belt = StagingBelt::new(
                 context.clone(),
                 &mut allocator,
-                gpu_geometry.geometry.size() as vk::DeviceSize + instance_buffer.attributes.size,
+                gpu_geometry.geometry.size() as vk::DeviceSize
+                    + instance_buffer.attributes.size
+                    + image.len() as vk::DeviceSize * 4,
             )?;
 
             staging_belt
                 .stage_geometry(&gpu_geometry, commands)?
                 .write(&gpu_instances)?
                 .copy_to(&instance_buffer, commands)
+                .write(image.as_raw())?
+                .copy_image_to(&mut texture, commands)
                 .done();
 
             let cameras = vec![Camera::new(
@@ -330,6 +399,28 @@ impl Renderer {
 
             let start_time = Instant::now();
 
+            let mut textures = vec![texture];
+
+            let texture_sampler = context
+                .device
+                .create_sampler(&vk::SamplerCreateInfo::default(), None)?;
+
+            for texture in textures.iter_mut() {
+                commands.transition_image_layout(texture, ImageLayoutState::shader_read());
+
+                context.device.update_descriptor_sets(
+                    &[vk::WriteDescriptorSet::default()
+                        .dst_set(descriptor_sets[0])
+                        .dst_binding(0)
+                        .descriptor_type(vk::DescriptorType::COMBINED_IMAGE_SAMPLER)
+                        .image_info(&[vk::DescriptorImageInfo::default()
+                            .image_view(texture.view)
+                            .sampler(texture_sampler)
+                            .image_layout(vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL)])],
+                    &[],
+                );
+            }
+
             Ok(Self {
                 allocator,
                 pipeline,
@@ -344,6 +435,10 @@ impl Renderer {
                 attributes,
                 instance_buffer,
                 instances,
+                descriptor_set_layout,
+                descriptor_pool,
+                descriptor_sets,
+                textures,
             })
         }
     }
@@ -435,6 +530,7 @@ impl Renderer {
                 ),
             )
             .bind_pipeline(self.pipeline)
+            .bind_descriptor_sets(self.pipeline_layout, &self.descriptor_sets)
             .bind_index_buffer(&self.gpu_geometry.index_buffer)
             .set_push_constants(
                 self.pipeline_layout,

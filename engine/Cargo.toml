@@ -15,6 +15,7 @@ gpu-allocator = { version = "0.27.0", default-features = false, features = ["vul
 renderdoc = "0.12.1"
 tobj = "4.0.2"
 itertools = "0.13.0"
+image = "0.25.4"
 
 [build-dependencies]
 shaderc = "0.8.3"

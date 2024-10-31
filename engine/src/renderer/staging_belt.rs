@@ -1,4 +1,5 @@
 use crate::buffer::{Buffer, BufferAttributes};
+use crate::image::Image;
 use crate::renderer::commands::Commands;
 use crate::renderer::geometry::GPUGeometry;
 use crate::rendering_context::RenderingContext;
@@ -49,6 +50,13 @@ impl StagingBelt {
     pub fn copy_to(&mut self, buffer: &Buffer, commands: &Commands) -> &mut Self {
         commands.copy_buffer(&self.buffer, buffer, self.copy_cursor);
         self.copy_cursor += buffer.attributes.size;
+        self
+    }
+
+    pub fn copy_image_to(&mut self, image: &mut Image, commands: &Commands) -> &mut Self {
+        commands.copy_buffer_to_image(&self.buffer, image, self.copy_cursor);
+        self.copy_cursor +=
+            (image.attributes.extent.width * image.attributes.extent.height * 4) as vk::DeviceSize;
         self
     }
 

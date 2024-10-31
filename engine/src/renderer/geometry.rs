@@ -17,6 +17,7 @@ type VertexIndex = u32;
 pub struct Vertex {
     pub position: na::Vector3<f32>,
     pub normal: na::Vector3<f32>,
+    pub tex_coord: na::Vector2<f32>,
 }
 
 pub struct Geometry {
@@ -53,9 +54,11 @@ impl Geometry {
                 .positions
                 .chunks(3)
                 .zip(mesh.normals.chunks(3))
-                .map(|(position, normal)| Vertex {
+                .zip(mesh.texcoords.chunks(2))
+                .map(|((position, normal), uv)| Vertex {
                     position: na::Vector3::new(position[0], position[1], position[2]),
                     normal: na::Vector3::new(normal[0], normal[1], normal[2]),
+                    tex_coord: na::Vector2::new(uv[0], uv[1]),
                 })
                 .collect(),
             indices: mesh.indices,

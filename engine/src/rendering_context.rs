@@ -263,7 +263,14 @@ impl RenderingContext {
                                 is_debug && is_capture_replay_supported,
                             )
                             .descriptor_indexing(true)
-                            .scalar_block_layout(true),
+                            .scalar_block_layout(true)
+                            .shader_sampled_image_array_non_uniform_indexing(true)
+                            .descriptor_binding_sampled_image_update_after_bind(true)
+                            .shader_uniform_buffer_array_non_uniform_indexing(true)
+                            .descriptor_binding_uniform_buffer_update_after_bind(true)
+                            .shader_storage_buffer_array_non_uniform_indexing(true)
+                            .descriptor_binding_storage_buffer_update_after_bind(true)
+                            .descriptor_binding_partially_bound(true),
                     )
                     .push_next(
                         &mut vk::PhysicalDeviceVulkan13Features::default()

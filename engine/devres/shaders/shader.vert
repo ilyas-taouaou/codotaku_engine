@@ -3,6 +3,7 @@
 
 layout (location = 0) out vec3 fragPosition;
 layout (location = 1) out vec3 fragNormal;
+layout (location = 2) out vec2 fragTexCoord;
 
 void main() {
     Vertex vertex = pushConstants.vertexBuffer.vertices[gl_VertexIndex];
@@ -15,4 +16,6 @@ void main() {
 
     mat3 normalMatrix = transpose(inverse(mat3(instance.model)));
     fragNormal = normalize(normalMatrix * vertex.normal);
+
+    fragTexCoord = vertex.texCoord;
 }

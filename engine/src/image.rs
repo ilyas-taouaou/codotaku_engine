@@ -347,6 +347,15 @@ impl ImageLayoutState {
         }
     }
 
+    pub fn shader_read() -> Self {
+        Self {
+            access: vk::AccessFlags2::SHADER_READ,
+            layout: vk::ImageLayout::SHADER_READ_ONLY_OPTIMAL,
+            stage: vk::PipelineStageFlags2::FRAGMENT_SHADER,
+            queue_family: QUEUE_FAMILY_IGNORED,
+        }
+    }
+
     pub fn is_subset_of(&self, other: Self) -> bool {
         self.layout == other.layout
             && self.access.contains(other.access)

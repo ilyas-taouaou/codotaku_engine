@@ -66,6 +66,49 @@ impl Commands {
         self
     }
 
+    pub fn copy_buffer_to_image(
+        &self,
+        src_buffer: &Buffer,
+        dst_image: &mut Image,
+        src_offset: vk::DeviceSize,
+    ) -> &Self {
+        self.ensure_image_layout(dst_image, ImageLayoutState::transfer_destination());
+
+        unsafe {
+            self.context.device.cmd_copy_buffer_to_image(
+                self.command_buffer,
+                src_buffer.handle,
+                dst_image.handle,
+                dst_image.layout.layout,
+                &[vk::BufferImageCopy::default()
+                    .buffer_offset(src_offset)
+                    .image_subresource(dst_image.subresource_layers())
+                    .image_extent(dst_image.attributes.extent)],
+            );
+        }
+
+        self
+    }
+
+    pub fn bind_descriptor_sets(
+        &self,
+        pipeline_layout: vk::PipelineLayout,
+        descriptor_sets: &[vk::DescriptorSet],
+    ) -> &Self {
+        unsafe {
+            self.context.device.cmd_bind_descriptor_sets(
+                self.command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                pipeline_layout,
+                0,
+                descriptor_sets,
+                &[],
+            );
+        }
+
+        self
+    }
+
     pub fn set_push_constants<T: bytemuck::Pod>(
         &self,
         pipeline_layout: vk::PipelineLayout,
